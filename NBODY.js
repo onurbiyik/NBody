@@ -47,25 +47,18 @@ var nbody = function (window) {
 
     };
 
+
     var randomColor = function () {
-        var rnd = Math.random();
-        if (rnd < 0.1) return "red";
-        if (rnd < 0.2) return "green";
-        if (rnd < 0.3) return "blue";
-        if (rnd < 0.5) return "chocolate";
-        if (rnd < 0.6) return "cyan";
-        if (rnd < 0.7) return "gray";
-        if (rnd < 0.8) return "yellow";
-        if (rnd < 0.9) return "PaleVioletRed";
-        return "black";
+        // ingenious random hex code generator by Paul Irish.
+        return '#' + Math.floor(Math.random() * 0xFFF).toString(16);
+    }
 
-    };
 
-    var Circle = function (location, v, radius) {
+    var Circle = function (location, velocity, radius) {
         this.location = location;
         this.r = radius;
         this.mass = 4 / 3 * Math.PI * radius * radius * radius; // sphere volume
-        this.v = v;
+        this.v = velocity;
         this.a = new Vector();
         this.color = randomColor();
 
@@ -95,8 +88,8 @@ var nbody = function (window) {
 
         var c = normalized.mul(2 * dot / totalMass);
 
-        var friction = 0.9;
-        c = c.mul(friction);
+        //var friction = 0.9999;
+        //c = c.mul(friction);
 
 
         p1.v = p1.v.add(c.mul(p2.mass));
@@ -112,31 +105,31 @@ var nbody = function (window) {
     var canvas = window.document.getElementById("canvas");
     var ctx = canvas.getContext("2d");
 
-    var gravity = 0.4;
+    var gravity = 0.1;
 
     var particles = [];
 
-    var mouseDownX, mouseDownY, mouseDownTime;
+    var mouseDownLoc, mouseDownTime;
+
     window.addEventListener("mousedown", function (e) {
-        mouseDownX = e.pageX - canvas.getBoundingClientRect().left;
-        mouseDownY = e.pageY - canvas.getBoundingClientRect().top;
-        mouseDownTime = Date.now();
+        mouseDownLoc = new Vector(e.pageX - canvas.getBoundingClientRect().left,
+                                  e.pageY - canvas.getBoundingClientRect().top);
+
+        mouseDownTime = window.performance.now();
     });
 
 
     window.addEventListener("mouseup", function (e) {
-        var mouseUpX = e.pageX - canvas.getBoundingClientRect().left;
-        var mouseUpY = e.pageY - canvas.getBoundingClientRect().top;
-        var mouseUpVector = new Vector(mouseUpX, mouseUpY);
+        var mouseUpLoc = new Vector(e.pageX - canvas.getBoundingClientRect().left,
+                                    e.pageY - canvas.getBoundingClientRect().top);
 
-        var speedX = (mouseUpX - mouseDownX) / 10;
-        var speedY = (mouseUpY - mouseDownY) / 10;
-        var speedVector = new Vector(speedX, speedY);
+        
+        var speedVector = mouseUpLoc.sub(mouseDownLoc).div(10);
 
-        var mouseDownDuration = Date.now() - mouseDownTime;
+        var mouseDownDuration = window.performance.now() - mouseDownTime;
         var newCircleRadius = mouseDownDuration / 50 + 5;
 
-        var newCircle = new Circle(mouseUpVector, speedVector, newCircleRadius);
+        var newCircle = new Circle(mouseUpLoc, speedVector, newCircleRadius);
 
         particles.push(newCircle);
     });
@@ -236,9 +229,8 @@ var nbody = function (window) {
         
             
         if (particles.length > 0) {
-            
-            firstLocation = particles[0].location;
-            ctx.translate(-firstLocation.x + canvas.width / 2, -firstLocation.y + canvas.height / 2);
+            //firstLocation = particles[0].location;
+            //ctx.translate(-firstLocation.x + canvas.width / 2, -firstLocation.y + canvas.height / 2);
         }
         
 
@@ -251,11 +243,9 @@ var nbody = function (window) {
             ctx.fill();
             ctx.closePath();
         }
-        
 
         renderDebugInfo();
-        
-        
+
     }
 
     var fps, fpsLast, fpslastUpdated;
@@ -265,9 +255,9 @@ var nbody = function (window) {
         ctx.save();
         ctx.setTransform(1, 0, 0, 1, 0, 0);
         
-        if (!fpslastUpdated || Date.now() - fpslastUpdated >= 1000) {
+        if (!fpslastUpdated || window.performance.now() - fpslastUpdated >= 1000) {
             fpsLast = fps;
-            fpslastUpdated = Date.now();
+            fpslastUpdated = window.performance.now();
             fps = 0;
         }
         fps++;

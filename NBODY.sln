@@ -3,7 +3,7 @@ Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio 2012
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution Items", "{9F680182-4FB8-45C9-B1E5-09FE4DB62E0D}"
 	ProjectSection(SolutionItems) = preProject
-		NBODY.html = NBODY.html
+		index.html = index.html
 		NBODY.js = NBODY.js
 	EndProjectSection
 EndProject
