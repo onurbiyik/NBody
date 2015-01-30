@@ -1,6 +1,8 @@
 var nbody = function (window) {
     "use strict";
 
+    var Game = {};
+
     var Vector = function (x, y) {
         this.x = x || 0;
         this.y = y || 0;
@@ -65,6 +67,7 @@ var nbody = function (window) {
     };
 
 
+
     function checkCollision(a, b) {
         var d = a.location.sub(b.location);
         var r = a.r + b.r;
@@ -98,31 +101,53 @@ var nbody = function (window) {
     }
 
 
+    function hitTest(loc){
+       
+        for (var i = 0; i < particles.length; i++) {
+            var p = particles[i];
+            
+            var diff = p.location.sub(loc);
+
+            if (diff.length() < p.r)
+                return p;
+        }
+        return null;
+    }
+
+
     var RAF = window.requestAnimationFrame || window.webkitRequestAnimationFrame || window.mozRequestAnimationFrame || window.oRequestAnimationFrame || window.msRequestAnimationFrame || function (callback) {
         window.setTimeout(callback, 1000 / 60);
     };
 
     var canvas = window.document.getElementById("canvas");
-    var ctx = canvas.getContext("2d");
-
+    
     var gravity = 0.1;
 
     var particles = [];
 
+    var cameraLoc = new Vector(0, 0);
+
     var mouseDownLoc, mouseDownTime;
 
     window.addEventListener("mousedown", function (e) {
-        mouseDownLoc = new Vector(e.pageX - canvas.getBoundingClientRect().left,
-                                  e.pageY - canvas.getBoundingClientRect().top);
+        mouseDownLoc = new Vector(e.pageX - canvas.getBoundingClientRect().left + cameraLoc.x,
+                                  e.pageY - canvas.getBoundingClientRect().top + cameraLoc.y);
 
         mouseDownTime = window.performance.now();
     });
 
 
     window.addEventListener("mouseup", function (e) {
-        var mouseUpLoc = new Vector(e.pageX - canvas.getBoundingClientRect().left,
-                                    e.pageY - canvas.getBoundingClientRect().top);
+        var mouseUpLoc = new Vector(e.pageX - canvas.getBoundingClientRect().left + cameraLoc.x,
+                                    e.pageY - canvas.getBoundingClientRect().top + cameraLoc.y);
 
+
+        var hitParticle = hitTest(mouseUpLoc);
+
+        if (hitParticle) {
+            hitParticle.selected = true;
+            return;
+        }
         
         var speedVector = mouseUpLoc.sub(mouseDownLoc).div(10);
 
@@ -192,6 +217,20 @@ var nbody = function (window) {
         doCollisions();
     }
 
+    function updateCamera() {
+        var speed = 200;
+        var step = (1000 / 60) / 1000; // todo : what's going on?
+
+        if (Game.controls.left)
+            cameraLoc.x -= speed * step;
+        if (Game.controls.up)
+            cameraLoc.y -= speed * step;
+        if (Game.controls.right)
+            cameraLoc.x += speed * step;
+        if (Game.controls.down)
+            cameraLoc.y += speed * step;
+    }
+
     function update() {
 
         var physicsPerFrame = 8;
@@ -199,6 +238,8 @@ var nbody = function (window) {
         for (var k = 0; k < physicsPerFrame; k++) {
             doPhysics(1.0 / physicsPerFrame);
         }
+
+        updateCamera();
 
         render();
 
@@ -219,19 +260,18 @@ var nbody = function (window) {
 
     
     function render() {
-        var firstLocation;
 
+        var ctx = canvas.getContext("2d");
         
         // reset transformation
         ctx.setTransform(1, 0, 0, 1, 0, 0);
+
         // clear screen
         ctx.clearRect(0, 0, canvas.width, canvas.height);
         
             
-        if (particles.length > 0) {
-            //firstLocation = particles[0].location;
-            //ctx.translate(-firstLocation.x + canvas.width / 2, -firstLocation.y + canvas.height / 2);
-        }
+        ctx.translate(-cameraLoc.x, -cameraLoc.y);
+        
         
 
         for (var i = 0; i < particles.length; i++) {
@@ -242,15 +282,30 @@ var nbody = function (window) {
             ctx.fillStyle = p.color;
             ctx.fill();
             ctx.closePath();
+
+            if (true) {
+
+                ctx.beginPath();
+                ctx.moveTo(p.location.x, p.location.y);
+                ctx.lineTo(p.location.x + p.a.x * 200, p.location.y + p.a.y * 200);
+                ctx.strokeStyle = 'rgba(255, 0, 0, 0.2)';
+                ctx.stroke();
+
+                ctx.beginPath();
+                ctx.moveTo(p.location.x, p.location.y);
+                ctx.lineTo(p.location.x + p.v.x * 10, p.location.y + p.v.y * 10);
+                ctx.strokeStyle = 'rgba(0, 255, 0, 0.2)';
+                ctx.stroke();
+            }
         }
 
-        renderDebugInfo();
+        renderDebugInfo(ctx);
 
     }
 
     var fps, fpsLast, fpslastUpdated;
 
-    function renderDebugInfo() {
+    function renderDebugInfo(ctx) {
     
         ctx.save();
         ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -264,9 +319,55 @@ var nbody = function (window) {
 
         ctx.fillStyle = "#555";
         ctx.fillText(fpsLast + ' fps', 5, 15);
+
         
         ctx.restore();
     }
+
+
+    Game.controls = {
+        left: false,
+        up: false,
+        right: false,
+        down: false,
+    };
+
+    window.addEventListener("keydown", function (e) {
+        switch (e.keyCode) {
+            case 37: // left arrow
+                Game.controls.left = true;
+                break;
+            case 38: // up arrow
+                Game.controls.up = true;
+                break;
+            case 39: // right arrow
+                Game.controls.right = true;
+                break;
+            case 40: // down arrow
+                Game.controls.down = true;
+                break;
+        }
+    }, false);
+
+    window.addEventListener("keyup", function (e) {
+        switch (e.keyCode) {
+            case 37: // left arrow
+                Game.controls.left = false;
+                break;
+            case 38: // up arrow
+                Game.controls.up = false;
+                break;
+            case 39: // right arrow
+                Game.controls.right = false;
+                break;
+            case 40: // down arrow
+                Game.controls.down = false;
+                break;
+            case 80: // key P pauses the game
+                Game.togglePause();
+                break;
+        }
+    }, false);
 
 
     adjustCanvasSize();
