@@ -184,10 +184,27 @@ var nbody = function (window) {
 
                 doCollisions();
             }
+            var computeCenterOfGravity = function () {
+                var result = new Game.Vector();
+                var totalMass = 0.0;
+
+                for (var i = 0; i < Game.particles.length; i++) {
+                    var p = Game.particles[i];
+
+                    
+                    result = result.add(p.location.mul(p.mass));
+
+                    totalMass += p.mass;
+
+                }
+
+                return result.div(totalMass);
+            }
 
             return {
                 doPhysics: doPhysics,
-                hitTest: hitTest
+                hitTest: hitTest,
+                computeCenterOfGravity: computeCenterOfGravity
             };
         }();
 
@@ -231,26 +248,29 @@ var nbody = function (window) {
 
         function renderGrid(ctx) {
             var i;
-            var p = 60;
+            var gridSize = 100;
 
-            ctx.beginPath()
+            ctx.beginPath();
 
-            var cameraXPan = Game.camera.loc.x % 60;
-            var cameraYPan = Game.camera.loc.y % 60;
+            // Pseudo scrolling. Grid lines are generated only for the view area of the camera.
+            var cameraXPan = Game.camera.loc.x % gridSize;
+            var cameraYPan = Game.camera.loc.y % gridSize;
 
-            for (i = -cameraXPan; i <= canvas.width; i += p) {
+            
+            // horizontal lines
+            for (i = -cameraXPan; i <= canvas.width; i += gridSize) {
                 ctx.moveTo(i, 0);
                 ctx.lineTo(i, canvas.height);
             }
 
-
-            for (i = -cameraYPan; i <= canvas.height; i += p) {
+            // vertical lines
+            for (i = -cameraYPan; i <= canvas.height; i += gridSize) {
                 ctx.moveTo(0, i);
                 ctx.lineTo(canvas.width, i);
             }
 
             ctx.lineWidth = 0.1;
-            ctx.strokeStyle = "#BBB";
+            ctx.strokeStyle = "#777";
             ctx.stroke();
             ctx.closePath();
         }
@@ -267,6 +287,7 @@ var nbody = function (window) {
                 ctx.closePath();
 
             }
+
 
         }
 
@@ -300,21 +321,24 @@ var nbody = function (window) {
             for (var i = 0; i < Game.particles.length; i++) {
                 var p = Game.particles[i];
 
+
+                ctx.setLineDash([3, 7]);
+                ctx.lineWidth = 0.3;
+
+                // acceleration
                 ctx.beginPath();
-
-                ctx.setLineDash([2, 5]);
-
                 ctx.moveTo(p.location.x, p.location.y);
                 ctx.lineTo(p.location.x + p.a.x * 200, p.location.y + p.a.y * 200);
-                ctx.strokeStyle = 'rgba(255, 0, 0, 0.7)';
+                ctx.strokeStyle = 'rgba(255, 0, 0, 0.4)';
                 ctx.stroke();
+                ctx.closePath();
 
-
+                // velocity
+                ctx.beginPath();
                 ctx.moveTo(p.location.x, p.location.y);
                 ctx.lineTo(p.location.x + p.v.x * 10, p.location.y + p.v.y * 10);
-                ctx.strokeStyle = 'rgba(0, 255, 0, 0.7)';
+                ctx.strokeStyle = 'rgba(0, 255, 0, 0.4)';
                 ctx.stroke();
-
                 ctx.closePath();
 
 
@@ -333,6 +357,8 @@ var nbody = function (window) {
             up: false,
             right: false,
             down: false,
+            pause: false,
+            lockToCenter: false
         };
 
         window.addEventListener("keydown", function (e) {
@@ -348,9 +374,6 @@ var nbody = function (window) {
                     break;
                 case 40: // down arrow
                     Game.controls.down = true;
-                    break;
-                case 80: // key P pauses the game
-                    togglePause();
                     break;
             }
         }, false);
@@ -370,7 +393,10 @@ var nbody = function (window) {
                     Game.controls.down = false;
                     break;
                 case 80: // key P pauses the game
-                    togglePause();
+                    Game.controls.pause = !Game.controls.pause;
+                    break;
+                case 76: // key L locks the camera to center of gravity
+                    Game.controls.lockToCenter = !Game.controls.lockToCenter;
                     break;
             }
         }, false);
@@ -422,6 +448,29 @@ var nbody = function (window) {
             };
 
             function moveCamera() {
+
+                if (Game.controls.lockToCenter)
+                    moveCameraWithCenterOfGravity();
+                else
+                    moveCameraWithArrows();
+                
+            }
+
+            function moveCameraWithCenterOfGravity() {
+                var cog = Game.physics.computeCenterOfGravity();
+
+                var screenCenter = new Game.Vector(canvas.width / 2, canvas.height / 2);
+
+                var newCamLoc = cog.sub(screenCenter);
+
+                // slowly move the camera to new location
+                var diff = newCamLoc.sub(Game.camera.loc).div(10);
+
+                Game.camera.loc = Game.camera.loc.add(diff);
+                
+            }
+
+            function moveCameraWithArrows() {
                 var speed = 400;
                 var step = (1000 / 60) / 1000; // todo : what's going on?
 
@@ -442,6 +491,12 @@ var nbody = function (window) {
             }
 
             function update() {
+
+                if (Game.controls.pause) {
+                    setTimeout(update, 50);
+                    return;
+                }
+
 
                 var physicsPerFrame = 8;
 
