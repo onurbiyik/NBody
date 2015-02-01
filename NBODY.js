@@ -2,7 +2,7 @@ var nbody = function (window) {
     "use strict";
 
     window.Game = {
-        canvas: {},
+        canvas: window.document.getElementById("canvas"),
         particles: []
     };
 
@@ -50,16 +50,23 @@ var nbody = function (window) {
 
             normalize: function () {
                 return this.div(this.length());
-            },
+            }
 
         };
 
         Game.Vector = Vector;
-    })();
+    }());
 
 
     // CIRCLE
     (function () {
+
+        function randomColor() {
+            // ingenious random hex code generator by Paul Irish.
+            return '#' + Math.floor(Math.random() * 0xFFF).toString(16);
+        }
+
+
         var Circle = function (location, velocity, radius) {
             this.location = location;
             this.radius = radius;
@@ -67,36 +74,26 @@ var nbody = function (window) {
             this.v = velocity;
             this.a = new Game.Vector();
             this.color = randomColor();
-
         };
-
-
-        var randomColor = function () {
-            // ingenious random hex code generator by Paul Irish.
-            return '#' + Math.floor(Math.random() * 0xFFF).toString(16);
-        }
 
         Game.Circle = Circle;
 
-    })();
+    }());
 
 
     // PHYSICS
     (function () {
 
         Game.physics = function () {
-            
+
             var checkCollision = function (a, b) {
                 var dist = a.location.sub(b.location);
                 var totalRad = a.radius + b.radius;
                 // object touch check
-                // if (dist.lengthSq() < totalRad * totalRad) { 
+                // return (dist.lengthSq() < totalRad * totalRad);
+
                 // loose check
-                if (dist.lengthSq() < totalRad) {
-                    return true;
-                } else {
-                    return false;
-                }
+                return (dist.lengthSq() < totalRad);
             };
 
             var resolveCollision = function (p1, p2) {
@@ -487,16 +484,18 @@ var nbody = function (window) {
 
         var mouseDownLoc, mouseDownTime;
 
-        window.addEventListener("mousedown", function (e) {
-            mouseDownLoc = new Game.Vector(e.pageX - canvas.getBoundingClientRect().left,
-                                      e.pageY - canvas.getBoundingClientRect().top);
+        var touchOrMouseDown = function (x, y) {
+
+            mouseDownLoc = new Game.Vector(x - canvas.getBoundingClientRect().left,
+                                      y - canvas.getBoundingClientRect().top);
 
             mouseDownTime = window.performance.now();
-        });
+        }
 
-        window.addEventListener("mouseup", function (e) {
-            var mouseUpLoc = new Game.Vector(e.pageX - canvas.getBoundingClientRect().left,
-                                        e.pageY - canvas.getBoundingClientRect().top);
+        var touchOrMouseUp = function (x, y) {
+
+            var mouseUpLoc = new Game.Vector(x - canvas.getBoundingClientRect().left,
+                                        y - canvas.getBoundingClientRect().top);
 
 
             var mouseUpLocTranslated = mouseUpLoc.add(Game.camera.loc);
@@ -516,7 +515,23 @@ var nbody = function (window) {
             var newCircle = new Game.Circle(mouseUpLocTranslated, speedVector, newCircleRadius);
 
             Game.particles.push(newCircle);
+        }
+
+        Game.canvas.addEventListener("mousedown", function (e) {
+            touchOrMouseDown(e.pageX, e.pageY);
         });
+        Game.canvas.addEventListener("touchstart", function (e) {
+            touchOrMouseDown(e.changedTouches[0].x, e.changedTouches[0].y);
+        }, false);
+
+        Game.canvas.addEventListener("mouseup", function (e) {
+            touchOrMouseUp(e.pageX, e.pageY);
+        });
+        Game.canvas.addEventListener("touchend", function (e) {
+            touchOrMouseUp(e.changedTouches[0].x, e.changedTouches[0].y);
+        }, false);
+
+
     })();
 
 
@@ -566,7 +581,6 @@ var nbody = function (window) {
             }
 
             function init() {
-                Game.canvas = window.document.getElementById("canvas");
 
                 adjustCanvasSize();
             }
