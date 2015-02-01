@@ -87,9 +87,12 @@ var nbody = function (window) {
         Game.physics = function () {
             
             var checkCollision = function (a, b) {
-                var d = a.location.sub(b.location);
-                var r = a.radius + b.radius;
-                if (d.lengthSq() < r * r) {
+                var dist = a.location.sub(b.location);
+                var totalRad = a.radius + b.radius;
+                // object touch check
+                // if (dist.lengthSq() < totalRad * totalRad) { 
+                // loose check
+                if (dist.lengthSq() < totalRad) {
                     return true;
                 } else {
                     return false;
@@ -109,7 +112,7 @@ var nbody = function (window) {
 
                 var c = normalized.mul(2 * dot / totalMass);
 
-                //var friction = 0.9999;
+                //var friction = 0.99;
                 //c = c.mul(friction);
 
 
@@ -508,7 +511,7 @@ var nbody = function (window) {
             var speedVector = mouseUpLoc.sub(mouseDownLoc).div(10);
 
             var mouseDownDuration = window.performance.now() - mouseDownTime;
-            var newCircleRadius = mouseDownDuration / 50 + 5;
+            var newCircleRadius = mouseDownDuration / 50 + 3;
 
             var newCircle = new Game.Circle(mouseUpLocTranslated, speedVector, newCircleRadius);
 
