@@ -62,7 +62,7 @@ var nbody = function (window) {
     (function () {
         var Circle = function (location, velocity, radius) {
             this.location = location;
-            this.r = radius;
+            this.radius = radius;
             this.mass = 4 / 3 * Math.PI * radius * radius * radius; // sphere volume
             this.v = velocity;
             this.a = new Game.Vector();
@@ -85,16 +85,17 @@ var nbody = function (window) {
     (function () {
 
         Game.physics = function () {
-
+            
             var checkCollision = function (a, b) {
                 var d = a.location.sub(b.location);
-                var r = a.r + b.r;
+                var r = a.radius + b.radius;
                 if (d.lengthSq() < r * r) {
                     return true;
                 } else {
                     return false;
                 }
             };
+
             var resolveCollision = function (p1, p2) {
                 var displacement = p1.location.sub(p2.location);
 
@@ -123,13 +124,13 @@ var nbody = function (window) {
 
                     var diff = p.location.sub(loc);
 
-                    if (diff.length() < p.r)
+                    if (diff.length() < p.radius)
                         return p;
                 }
                 return null;
             };
             var doCollisions = function () {
-
+                
                 for (var i = 0; i < Game.particles.length; i++) {
                     var p1 = Game.particles[i];
                     for (var j = 0; j < i; j++) {
@@ -234,13 +235,13 @@ var nbody = function (window) {
             // clear screen
             ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-
             renderGrid(ctx);
 
             // pan ctx according to camera
             ctx.translate(-Game.camera.loc.x, -Game.camera.loc.y);
 
             renderParticles(ctx);
+
 
             renderDebugInfo(ctx);
 
@@ -272,22 +273,91 @@ var nbody = function (window) {
             ctx.lineWidth = 0.1;
             ctx.strokeStyle = "#777";
             ctx.stroke();
-            ctx.closePath();
         }
 
-        function renderParticles(ctx) {
 
-            for (var i = 0; i < Game.particles.length; i++) {
-                var p = Game.particles[i];
+        function renderParticleTrails(ctx, p, addTrails) {
+            var i, trailLoc;
 
-                ctx.beginPath();
-                ctx.arc(p.location.x, p.location.y, p.r, 0, Math.PI * 2, false);
-                ctx.fillStyle = p.color;
-                ctx.fill();
-                ctx.closePath();
+            p.trails = p.trails || [];
 
+            if (addTrails) {
+                addParticleTrails(p);
             }
 
+            // grouping a number of trails in one canvas path for performance.
+            var TRAILS_IN_PATH = 5;
+
+            // start from particle location
+            ctx.moveTo(p.location.x, p.location.y);
+
+            // follow all the trails from the end
+            for (i = p.trails.length - 1; i >= 0; i -= TRAILS_IN_PATH) {
+                
+                ctx.beginPath();
+                ctx.lineTo(p.trails[i].x, p.trails[i].y);
+
+                for (var j = i; j >= Math.max(i - TRAILS_IN_PATH, 0); j--) {
+                    trailLoc = p.trails[j];
+                    ctx.lineTo(trailLoc.x, trailLoc.y);
+                }
+
+                var opacity = i / p.trails.length / 5; 
+
+                ctx.lineWidth = 3;
+                ctx.strokeStyle = p.color;
+                ctx.globalAlpha = opacity;
+                ctx.stroke();
+            }
+
+            ctx.globalAlpha = 1;    // reset context opacity
+            
+        }
+
+        function addParticleTrails(p) {
+            var MAX_TRAILS_LENGTH = 40;
+
+            p.trails.push(p.location);
+            if (p.trails.length > MAX_TRAILS_LENGTH)
+                p.trails.shift();   // consider using queue.js for performance
+        }
+
+        function renderParticle(ctx, p) {
+
+            ctx.beginPath();
+            ctx.arc(p.location.x, p.location.y, p.radius, 0, Math.PI * 2, false);
+            ctx.fillStyle = p.color;
+            ctx.fill();
+        }
+
+        var skipFramesPerTrail = 0;
+        function shouldAddTrails() {
+
+            var FRAMES_PER_TRAIL = 2;
+
+            skipFramesPerTrail++;
+            if (skipFramesPerTrail < FRAMES_PER_TRAIL) {
+                return false;
+            }
+            skipFramesPerTrail = 0;
+            return true;
+        }
+
+
+        function renderParticles(ctx) {
+            var i, p;
+
+            var addTrails = shouldAddTrails();
+            for (i = 0; i < Game.particles.length; i++) {
+                p = Game.particles[i];
+                renderParticleTrails(ctx, p, addTrails);
+            }
+
+            for (i = 0; i < Game.particles.length; i++) {
+                p = Game.particles[i];
+
+                renderParticle(ctx, p);
+            }
 
         }
 
@@ -329,17 +399,15 @@ var nbody = function (window) {
                 ctx.beginPath();
                 ctx.moveTo(p.location.x, p.location.y);
                 ctx.lineTo(p.location.x + p.a.x * 200, p.location.y + p.a.y * 200);
-                ctx.strokeStyle = 'rgba(255, 0, 0, 0.4)';
+                ctx.strokeStyle = 'rgba(255, 0, 0, 0.5)';
                 ctx.stroke();
-                ctx.closePath();
 
                 // velocity
                 ctx.beginPath();
                 ctx.moveTo(p.location.x, p.location.y);
                 ctx.lineTo(p.location.x + p.v.x * 10, p.location.y + p.v.y * 10);
-                ctx.strokeStyle = 'rgba(0, 255, 0, 0.4)';
+                ctx.strokeStyle = 'rgba(0, 255, 0, 0.5)';
                 ctx.stroke();
-                ctx.closePath();
 
 
                 ctx.setLineDash([]);
@@ -358,22 +426,27 @@ var nbody = function (window) {
             right: false,
             down: false,
             pause: false,
-            lockToCenter: false
+            lockToCenter: false,
+            reset: false
         };
 
         window.addEventListener("keydown", function (e) {
             switch (e.keyCode) {
                 case 37: // left arrow
                     Game.controls.left = true;
+                    Game.controls.lockToCenter = false;
                     break;
                 case 38: // up arrow
                     Game.controls.up = true;
+                    Game.controls.lockToCenter = false;
                     break;
                 case 39: // right arrow
                     Game.controls.right = true;
+                    Game.controls.lockToCenter = false;
                     break;
                 case 40: // down arrow
                     Game.controls.down = true;
+                    Game.controls.lockToCenter = false;
                     break;
             }
         }, false);
@@ -398,6 +471,9 @@ var nbody = function (window) {
                 case 76: // key L locks the camera to center of gravity
                     Game.controls.lockToCenter = !Game.controls.lockToCenter;
                     break;
+                case 82: // key R locks the camera to center of gravity
+                    Game.controls.reset = true;
+                    break;
             }
         }, false);
     })();
@@ -409,18 +485,20 @@ var nbody = function (window) {
         var mouseDownLoc, mouseDownTime;
 
         window.addEventListener("mousedown", function (e) {
-            mouseDownLoc = new Game.Vector(e.pageX - canvas.getBoundingClientRect().left + Game.camera.loc.x,
-                                      e.pageY - canvas.getBoundingClientRect().top + Game.camera.loc.y);
+            mouseDownLoc = new Game.Vector(e.pageX - canvas.getBoundingClientRect().left,
+                                      e.pageY - canvas.getBoundingClientRect().top);
 
             mouseDownTime = window.performance.now();
         });
 
         window.addEventListener("mouseup", function (e) {
-            var mouseUpLoc = new Game.Vector(e.pageX - canvas.getBoundingClientRect().left + Game.camera.loc.x,
-                                        e.pageY - canvas.getBoundingClientRect().top + Game.camera.loc.y);
+            var mouseUpLoc = new Game.Vector(e.pageX - canvas.getBoundingClientRect().left,
+                                        e.pageY - canvas.getBoundingClientRect().top);
 
 
-            var hitParticle = Game.physics.hitTest(mouseUpLoc);
+            var mouseUpLocTranslated = mouseUpLoc.add(Game.camera.loc);
+
+            var hitParticle = Game.physics.hitTest(mouseUpLocTranslated);
 
             if (hitParticle) {
                 hitParticle.selected = true;
@@ -432,7 +510,7 @@ var nbody = function (window) {
             var mouseDownDuration = window.performance.now() - mouseDownTime;
             var newCircleRadius = mouseDownDuration / 50 + 5;
 
-            var newCircle = new Game.Circle(mouseUpLoc, speedVector, newCircleRadius);
+            var newCircle = new Game.Circle(mouseUpLocTranslated, speedVector, newCircleRadius);
 
             Game.particles.push(newCircle);
         });
@@ -490,11 +568,20 @@ var nbody = function (window) {
                 adjustCanvasSize();
             }
 
+            function reset() {
+                Game.particles = [];
+                Game.controls.reset = false;    // reset the reset flag.
+            }
+
             function update() {
 
                 if (Game.controls.pause) {
                     setTimeout(update, 50);
                     return;
+                }
+
+                if (Game.controls.reset) {
+                    reset();
                 }
 
 
