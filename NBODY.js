@@ -1,4 +1,4 @@
-var nbody = function (window) {
+(function (window) {
     "use strict";
 
     window.Game = {
@@ -668,6 +668,44 @@ var nbody = function (window) {
             function init() {
 
                 adjustCanvasSize();
+
+                addInitialParticles();
+            }
+
+            function addInitialParticles() {
+
+                var sun = new Game.Circle(
+                    new Game.Vector(0, 0),
+                    new Game.Vector(0, -0.1),
+                    35);
+                sun.color = "#EE5";
+
+                var mercury = new Game.Circle(
+                    new Game.Vector(-200, 0),
+                    new Game.Vector(0, -9),
+                    3);
+                mercury.color = "#000";
+
+
+                var earth = new Game.Circle(
+                    new Game.Vector(500, 0),
+                    new Game.Vector(0, 6),
+                    8);
+                earth.color = "#66F";
+
+
+                var moon = new Game.Circle(
+                    new Game.Vector(520, 0),
+                    new Game.Vector(0, 9),
+                    2);
+                moon.color = "#444";
+
+                Game.particles.push(sun);
+                Game.particles.push(mercury);
+                Game.particles.push(earth);
+                Game.particles.push(moon);
+
+                Game.camera.loc = new Game.Vector(-Game.canvas.width / 2, -Game.canvas.height / 2);
             }
 
             function reset() {
@@ -725,4 +763,4 @@ var nbody = function (window) {
     }
 
 
-}(window);
+})(window);
