@@ -216,8 +216,100 @@ var nbody = function (window) {
     (function () {
         Game.camera = function () {
             var loc = new Game.Vector(0, 0);
+            var zoom = 1;
 
-            return { loc: loc };
+
+            var screenLocToCanvasLoc = function (loc) {
+                var canvasLoc = loc;
+
+                canvasLoc = loc.div(Game.camera.zoom)
+
+                canvasLoc = canvasLoc.add(Game.camera.loc);
+
+                return canvasLoc;
+            }
+
+            var zoomIn = function (loc) {
+                if (Game.camera.zoom > 10)
+                    return;
+                
+                zoomInternal(loc, false);
+            };
+
+            var zoomOut = function (loc) {
+                if (Game.camera.zoom < 0.1)
+                    return;
+
+                zoomInternal(loc, true);
+            };
+
+            var zoomInternal = function (loc, reverse) {
+                var ZOOM_RATE = 1.2;
+
+                var oldZoom = Game.camera.zoom;
+                var newZoom;
+
+                if (reverse)
+                    newZoom = oldZoom / ZOOM_RATE;
+                else
+                    newZoom = oldZoom * ZOOM_RATE;
+                
+
+                var oldLoc = Game.camera.loc;
+                var locDiff = loc.div(oldZoom).sub(loc.div(newZoom));
+                var newLoc = oldLoc.add(locDiff);
+
+                Game.camera.loc = newLoc;
+                Game.camera.zoom = newZoom;
+
+            };
+
+            function moveCamera() {
+
+                if (Game.controls.lockToCenter)
+                    moveCameraWithCenterOfGravity();
+                else
+                    moveCameraWithArrows();
+
+            }
+
+            function moveCameraWithCenterOfGravity() {
+                var cog = Game.physics.computeCenterOfGravity();
+
+                var screenCenter = new Game.Vector(canvas.width / 2, canvas.height / 2).div(Game.camera.zoom);
+
+
+                var newCamLoc = cog.sub(screenCenter);
+
+                // slowly move the camera to new location
+                var diff = newCamLoc.sub(Game.camera.loc).div(10);
+
+                Game.camera.loc = Game.camera.loc.add(diff);
+
+            }
+
+            function moveCameraWithArrows() {
+                var speed = 400;
+                var step = (1000 / 60) / 1000; // todo : what's going on?
+
+                if (Game.controls.left)
+                    Game.camera.loc.x -= speed * step;
+                if (Game.controls.up)
+                    Game.camera.loc.y -= speed * step;
+                if (Game.controls.right)
+                    Game.camera.loc.x += speed * step;
+                if (Game.controls.down)
+                    Game.camera.loc.y += speed * step;
+            }
+
+            return {
+                loc: loc,
+                zoom: zoom,
+                zoomIn: zoomIn,
+                zoomOut: zoomOut,
+                screenLocToCanvasLoc: screenLocToCanvasLoc,
+                moveCamera: moveCamera
+            };
         }();
     })();
 
@@ -235,10 +327,13 @@ var nbody = function (window) {
             // clear screen
             ctx.clearRect(0, 0, canvas.width, canvas.height);
 
+            ctx.scale(Game.camera.zoom, Game.camera.zoom);
+
             renderGrid(ctx);
 
             // pan ctx according to camera
             ctx.translate(-Game.camera.loc.x, -Game.camera.loc.y);
+
 
             renderParticles(ctx);
 
@@ -251,7 +346,12 @@ var nbody = function (window) {
             var i;
             var gridSize = 100;
 
+
+            var gridHeight = canvas.height / Game.camera.zoom;
+            var gridWidth = canvas.width / Game.camera.zoom;
+
             ctx.beginPath();
+
 
             // Pseudo scrolling. Grid lines are generated only for the view area of the camera.
             var cameraXPan = Game.camera.loc.x % gridSize;
@@ -259,19 +359,19 @@ var nbody = function (window) {
 
             
             // horizontal lines
-            for (i = -cameraXPan; i <= canvas.width; i += gridSize) {
+            for (i = -cameraXPan; i <= gridWidth; i += gridSize) {
                 ctx.moveTo(i, 0);
-                ctx.lineTo(i, canvas.height);
+                ctx.lineTo(i, gridHeight);
             }
 
             // vertical lines
-            for (i = -cameraYPan; i <= canvas.height; i += gridSize) {
+            for (i = -cameraYPan; i <= gridHeight; i += gridSize) {
                 ctx.moveTo(0, i);
-                ctx.lineTo(canvas.width, i);
+                ctx.lineTo(gridWidth, i);
             }
 
             ctx.lineWidth = 0.1;
-            ctx.strokeStyle = "#777";
+            ctx.strokeStyle = "#555";
             ctx.stroke();
         }
 
@@ -325,6 +425,7 @@ var nbody = function (window) {
         function renderParticle(ctx, p) {
 
             ctx.beginPath();
+            // ctx.moveTo(p.location.x, p.location.y);
             ctx.arc(p.location.x, p.location.y, p.radius, 0, Math.PI * 2, false);
             ctx.fillStyle = p.color;
             ctx.fill();
@@ -367,10 +468,7 @@ var nbody = function (window) {
         function renderDebugInfo(ctx) {
 
             renderParticleVectors(ctx)
-
-            ctx.save();
-            ctx.setTransform(1, 0, 0, 1, 0, 0);
-
+            
             if (!fpslastUpdated || window.performance.now() - fpslastUpdated >= 1000) {
                 fpsLast = fps;
                 fpslastUpdated = window.performance.now();
@@ -378,11 +476,15 @@ var nbody = function (window) {
             }
             fps++;
 
-            ctx.fillStyle = "#555";
-            ctx.fillText(fpsLast + ' fps', 5, 15);
+            if (fpsLast) {
+                ctx.save();
+                ctx.setTransform(1, 0, 0, 1, 0, 0);
 
-
-            ctx.restore();
+                ctx.font = "14px monospace";
+                ctx.fillStyle = "#555";
+                ctx.fillText(fpsLast + ' fps', 5, 15);
+                ctx.restore();
+            }
 
         }
 
@@ -405,7 +507,7 @@ var nbody = function (window) {
                 // velocity
                 ctx.beginPath();
                 ctx.moveTo(p.location.x, p.location.y);
-                ctx.lineTo(p.location.x + p.v.x * 10, p.location.y + p.v.y * 10);
+                ctx.lineTo(p.location.x + p.v.x * 5, p.location.y + p.v.y * 5);
                 ctx.strokeStyle = 'rgba(0, 255, 0, 0.5)';
                 ctx.stroke();
 
@@ -498,7 +600,7 @@ var nbody = function (window) {
                                         y - canvas.getBoundingClientRect().top);
 
 
-            var mouseUpLocTranslated = mouseUpLoc.add(Game.camera.loc);
+            var mouseUpLocTranslated = Game.camera.screenLocToCanvasLoc(mouseUpLoc);
 
             var hitParticle = Game.physics.hitTest(mouseUpLocTranslated);
 
@@ -517,6 +619,21 @@ var nbody = function (window) {
             Game.particles.push(newCircle);
         }
 
+        var mouseWheel = function (event) {
+
+            var mouseLoc = new Game.Vector(event.x - canvas.getBoundingClientRect().left,
+                                        event.y - canvas.getBoundingClientRect().top);
+
+            var wheel = event.wheelDelta / 120;//n or -n
+
+            if (wheel > 0)
+                Game.camera.zoomIn(mouseLoc);
+            else
+                Game.camera.zoomOut(mouseLoc);
+
+
+        }
+
         Game.canvas.addEventListener("mousedown", function (e) {
             touchOrMouseDown(e.pageX, e.pageY);
         });
@@ -531,6 +648,10 @@ var nbody = function (window) {
             touchOrMouseUp(e.changedTouches[0].x, e.changedTouches[0].y);
         }, false);
 
+        Game.canvas.addEventListener('mousewheel', function (event) {
+            mouseWheel(event);
+            return false;
+        }, false);
 
     })();
 
@@ -543,42 +664,6 @@ var nbody = function (window) {
                 window.setTimeout(callback, 1000 / 60);
             };
 
-            function moveCamera() {
-
-                if (Game.controls.lockToCenter)
-                    moveCameraWithCenterOfGravity();
-                else
-                    moveCameraWithArrows();
-                
-            }
-
-            function moveCameraWithCenterOfGravity() {
-                var cog = Game.physics.computeCenterOfGravity();
-
-                var screenCenter = new Game.Vector(canvas.width / 2, canvas.height / 2);
-
-                var newCamLoc = cog.sub(screenCenter);
-
-                // slowly move the camera to new location
-                var diff = newCamLoc.sub(Game.camera.loc).div(10);
-
-                Game.camera.loc = Game.camera.loc.add(diff);
-                
-            }
-
-            function moveCameraWithArrows() {
-                var speed = 400;
-                var step = (1000 / 60) / 1000; // todo : what's going on?
-
-                if (Game.controls.left)
-                    Game.camera.loc.x -= speed * step;
-                if (Game.controls.up)
-                    Game.camera.loc.y -= speed * step;
-                if (Game.controls.right)
-                    Game.camera.loc.x += speed * step;
-                if (Game.controls.down)
-                    Game.camera.loc.y += speed * step;
-            }
 
             function init() {
 
@@ -592,23 +677,22 @@ var nbody = function (window) {
 
             function update() {
 
-                if (Game.controls.pause) {
-                    setTimeout(update, 50);
-                    return;
-                }
-
                 if (Game.controls.reset) {
                     reset();
                 }
 
 
-                var physicsPerFrame = 8;
+                if (!Game.controls.pause) {
 
-                for (var k = 0; k < physicsPerFrame; k++) {
-                    Game.physics.doPhysics(1.0 / physicsPerFrame);
+                    var physicsPerFrame = 8;
+
+                    for (var k = 0; k < physicsPerFrame; k++) {
+                        Game.physics.doPhysics(1.0 / physicsPerFrame);
+                    }
                 }
 
-                moveCamera();
+                
+                Game.camera.moveCamera();
 
                 Game.render();
 
