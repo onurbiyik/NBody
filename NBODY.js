@@ -62,8 +62,14 @@
     (function () {
 
         function randomColor() {
-            // ingenious random hex code generator by Paul Irish.
-            return '#' + Math.floor(Math.random() * 0xFFF).toString(16);
+            
+            var max = 14;   // to prevent too light colors on a white background. out of 16.
+
+            var r = Math.floor(Math.random() * max);
+            var g = Math.floor(Math.random() * max);
+            var b = Math.floor(Math.random() * max);
+
+            return '#' + r.toString(16) + g.toString(16) + b.toString(16);
         }
 
 
@@ -143,9 +149,10 @@
 
                 }
             };
+
             var computeForces = function () {
 
-                var gravity = 0.1;
+                var GRAVITATIONAL_CONSTANT = 0.1;
 
 
                 for (var i = 0; i < Game.particles.length; i++) {
@@ -157,34 +164,72 @@
 
                         var distance = p.location.sub(p2.location);
                         var norm = Math.sqrt(100.0 + distance.lengthSq());
-                        var mag = gravity / (norm * norm * norm);
+                        var mag = GRAVITATIONAL_CONSTANT / (norm * norm * norm);
 
-                        p.a = p.a.sub(distance.mul(mag * p2.mass));
-                        p2.a = p2.a.add(distance.mul(mag * p.mass));
+                        var jerkP = distance.mul(mag * p2.mass);
+                        var jerkP2 = distance.mul(mag * p.mass);
+
+                        p.a = p.a.sub(jerkP);
+                        p2.a = p2.a.add(jerkP2);
 
                     }
                 }
 
             };
-            var doPhysics = function (dt) {
-                for (var i1 = 0; i1 < Game.particles.length; i1++) {
-                    var p1 = Game.particles[i1];
-                    p1.location = p1.location.add(p1.v.mul(0.5 * dt));
-                }
-                computeForces();
-                for (var i2 = 0; i2 < Game.particles.length; i2++) {
-                    var p2 = Game.particles[i2];
-                    p2.v = p2.v.add(p2.a.mul(dt));
-                }
 
-                for (var i3 = 0; i3 < Game.particles.length; i3++) {
-                    var p3 = Game.particles[i3];
-                    p3.location = p3.location.add(p3.v.mul(0.5 * dt));
+            var moveParticles = function (dt) {
+                var i, p;
+
+                for (i = 0; i < Game.particles.length; i++) {
+                    p = Game.particles[i];
+                    p.location = p.location.add(p.v.mul(dt));
                 }
-
-
-                doCollisions();
             }
+
+            var applyForces = function (dt) {
+                var i, p;
+
+                for (i = 0; i < Game.particles.length; i++) {
+                    p = Game.particles[i];
+                    p.v = p.v.add(p.a.mul(dt));
+                }             
+            }
+
+            var doPhysics = function (dt) {
+                // Velocity verlet implementation
+                // http://webphysics.davidson.edu/Projects/SuFischer/node47.html
+                
+                moveParticles(0.5 * dt);    
+                
+                computeForces();    // gravitational attraction does not vary with time.
+
+                applyForces(dt);
+
+                moveParticles(0.5 * dt);
+                
+                doCollisions();
+
+                // verifyConservationOfMomentum();
+            }
+
+            var totalMomentum;
+            var verifyConservationOfMomentum = function () {
+                // generate a console warning in case of a significant change in total momentum.
+           
+                totalMomentum = totalMomentum || new Game.Vector(0, 0);
+                var newtotalMom = new Game.Vector(0, 0);
+                for (var i = 0; i < Game.particles.length; i++) {
+                    var p = Game.particles[i];
+                    newtotalMom = newtotalMom.add(p.v.mul(p.mass));
+                }
+                if (Math.abs(newtotalMom.length() - totalMomentum.length()) > 0.00000005)
+                {
+                    console.log("mom", totalMomentum.length(), newtotalMom.length())
+                }
+                totalMomentum = newtotalMom;
+
+            }
+
             var computeCenterOfGravity = function () {
                 var result = new Game.Vector();
                 var totalMass = 0.0;
@@ -535,18 +580,22 @@
         window.addEventListener("keydown", function (e) {
             switch (e.keyCode) {
                 case 37: // left arrow
+                case 65: // A
                     Game.controls.left = true;
                     Game.controls.lockToCenter = false;
                     break;
                 case 38: // up arrow
+                case 87: // W
                     Game.controls.up = true;
                     Game.controls.lockToCenter = false;
                     break;
                 case 39: // right arrow
+                case 68: // D
                     Game.controls.right = true;
                     Game.controls.lockToCenter = false;
                     break;
                 case 40: // down arrow
+                case 83: // S
                     Game.controls.down = true;
                     Game.controls.lockToCenter = false;
                     break;
@@ -556,15 +605,19 @@
         window.addEventListener("keyup", function (e) {
             switch (e.keyCode) {
                 case 37: // left arrow
+                case 65: // A
                     Game.controls.left = false;
                     break;
                 case 38: // up arrow
+                case 87: // W
                     Game.controls.up = false;
                     break;
                 case 39: // right arrow
+                case 68: // D
                     Game.controls.right = false;
                     break;
                 case 40: // down arrow
+                case 83: // S
                     Game.controls.down = false;
                     break;
                 case 80: // key P pauses the game
@@ -676,35 +729,29 @@
 
                 var sun = new Game.Circle(
                     new Game.Vector(0, 0),
-                    new Game.Vector(0, -0.1),
-                    35);
+                    new Game.Vector(-0.0, -0.05),
+                    16);
                 sun.color = "#EE5";
-
-                var mercury = new Game.Circle(
-                    new Game.Vector(-200, 0),
-                    new Game.Vector(0, -9),
-                    3);
-                mercury.color = "#000";
 
 
                 var earth = new Game.Circle(
-                    new Game.Vector(500, 0),
-                    new Game.Vector(0, 6),
-                    8);
+                    new Game.Vector(250, 0),
+                    new Game.Vector(0, 2.6),
+                    4);
                 earth.color = "#66F";
 
 
                 var moon = new Game.Circle(
-                    new Game.Vector(520, 0),
-                    new Game.Vector(0, 9),
-                    2);
-                moon.color = "#444";
+                    new Game.Vector(267, 0),
+                    new Game.Vector(0, 3.6),
+                    1);
+                moon.color = "#111";
 
                 Game.particles.push(sun);
-                Game.particles.push(mercury);
                 Game.particles.push(earth);
                 Game.particles.push(moon);
 
+                // center camera to origin
                 Game.camera.loc = new Game.Vector(-Game.canvas.width / 2, -Game.canvas.height / 2);
             }
 
@@ -722,6 +769,8 @@
 
                 if (!Game.controls.pause) {
 
+                    // For accuracy, we have a higher time-resolution for physics engine compared to rendering.
+                    // rendering is the slowest operation in a cycle anyway.
                     var physicsPerFrame = 8;
 
                     for (var k = 0; k < physicsPerFrame; k++) {
