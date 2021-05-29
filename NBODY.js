@@ -6,57 +6,52 @@
         particles: []
     };
 
-    // VECTOR
-    (function () {
-        var Vector = function (x, y) {
+
+    class Vector {
+        constructor(x, y) {
             this.x = x || 0;
             this.y = y || 0;
-        };
+        }
 
-        Vector.prototype = {
+        reset() {
+            this.x = 0;
+            this.y = 0;
+        }
 
-            reset: function () {
-                this.x = 0;
-                this.y = 0;
-            },
+        mul(mul) {
+            return new Vector(this.x * mul, this.y * mul);
+        }
 
-            mul: function (mul) {
-                return new Vector(this.x * mul, this.y * mul);
-            },
+        div(div) {
+            return new Vector(this.x / div, this.y / div);
+        }
 
-            div: function (div) {
-                return new Vector(this.x / div, this.y / div);
-            },
+        add(add) {
+            return new Vector(this.x + add.x, this.y + add.y);
+        }
 
-            add: function (add) {
-                return new Vector(this.x + add.x, this.y + add.y);
-            },
+        sub(sub) {
+            return new Vector(this.x - sub.x, this.y - sub.y);
+        }
 
-            sub: function (sub) {
-                return new Vector(this.x - sub.x, this.y - sub.y);
-            },
+        dot(v) {
+            return (this.x * v.x + this.y * v.y);
+        }
 
-            dot: function (v) {
-                return (this.x * v.x + this.y * v.y);
-            },
+        length() {
+            return Math.sqrt(this.dot(this));
+        }
 
-            length: function () {
-                return Math.sqrt(this.dot(this));
-            },
+        lengthSq() {
+            return this.dot(this);
+        }
 
-            lengthSq: function () {
-                return this.dot(this);
-            },
+        normalize() {
+            return this.div(this.length());
+        }
+    }
 
-            normalize: function () {
-                return this.div(this.length());
-            }
-
-        };
-
-        Game.Vector = Vector;
-    }());
-
+    Game.Vector = Vector;
 
     // CIRCLE
     (function () {
