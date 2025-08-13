@@ -1,10 +1,11 @@
 (function (window) {
     "use strict";
 
-    window.Game = {
+    const Game = {
         canvas: window.document.getElementById("canvas"),
         particles: []
     };
+    window.Game = Game;
 
 
     class Vector {
@@ -50,759 +51,454 @@
             return this.div(this.length());
         }
     }
-
     Game.Vector = Vector;
 
     // CIRCLE
-    (function () {
+    const randomColor = () => {
+        const max = 14;   // to prevent too light colors on a white background. out of 16.
+        const r = Math.floor(Math.random() * max);
+        const g = Math.floor(Math.random() * max);
+        const b = Math.floor(Math.random() * max);
+        return '#' + r.toString(16) + g.toString(16) + b.toString(16);
+    }
 
-        function randomColor() {
-            
-            var max = 14;   // to prevent too light colors on a white background. out of 16.
-
-            var r = Math.floor(Math.random() * max);
-            var g = Math.floor(Math.random() * max);
-            var b = Math.floor(Math.random() * max);
-
-            return '#' + r.toString(16) + g.toString(16) + b.toString(16);
-        }
-
-
-        var Circle = function (location, velocity, radius) {
+    class Circle {
+        constructor(location, velocity, radius) {
             this.location = location;
             this.radius = radius;
             this.mass = 4 / 3 * Math.PI * radius * radius * radius; // sphere volume
             this.v = velocity;
             this.a = new Game.Vector();
             this.color = randomColor();
-        };
-
-        Game.Circle = Circle;
-
-    }());
+        }
+    }
+    Game.Circle = Circle;
 
 
     // PHYSICS
-    (function () {
+    Game.physics = (function () {
 
-        Game.physics = function () {
+        const checkCollision = (a, b) => {
+            const dist = a.location.sub(b.location);
+            const totalRad = a.radius + b.radius;
+            return (dist.lengthSq() < totalRad);
+        };
 
-            var checkCollision = function (a, b) {
-                var dist = a.location.sub(b.location);
-                var totalRad = a.radius + b.radius;
-                // object touch check
-                // return (dist.lengthSq() < totalRad * totalRad);
+        const resolveCollision = (p1, p2) => {
+            const displacement = p1.location.sub(p2.location);
+            const normalized = displacement.normalize();
+            const v = p2.v.sub(p1.v);
+            const dot = normalized.dot(v);
+            const totalMass = p1.mass + p2.mass;
+            const c = normalized.mul(2 * dot / totalMass);
+            p1.v = p1.v.add(c.mul(p2.mass));
+            p2.v = p2.v.sub(c.mul(p1.mass));
+        };
 
-                // loose check
-                return (dist.lengthSq() < totalRad);
-            };
+        const hitTest = (loc) => {
+            for (let i = 0; i < Game.particles.length; i++) {
+                const p = Game.particles[i];
+                const diff = p.location.sub(loc);
+                if (diff.length() < p.radius)
+                    return p;
+            }
+            return null;
+        };
 
-            var resolveCollision = function (p1, p2) {
-                var displacement = p1.location.sub(p2.location);
-
-                var normalized = displacement.normalize();
-
-                var v = p2.v.sub(p1.v);
-
-                var dot = normalized.dot(v);
-
-                var totalMass = p1.mass + p2.mass;
-
-                var c = normalized.mul(2 * dot / totalMass);
-
-                //var friction = 0.99;
-                //c = c.mul(friction);
-
-
-                p1.v = p1.v.add(c.mul(p2.mass));
-                p2.v = p2.v.sub(c.mul(p1.mass));
-
-            };
-            var hitTest = function (loc) {
-
-                for (var i = 0; i < Game.particles.length; i++) {
-                    var p = Game.particles[i];
-
-                    var diff = p.location.sub(loc);
-
-                    if (diff.length() < p.radius)
-                        return p;
-                }
-                return null;
-            };
-            var doCollisions = function () {
-                
-                for (var i = 0; i < Game.particles.length; i++) {
-                    var p1 = Game.particles[i];
-                    for (var j = 0; j < i; j++) {
-                        var p2 = Game.particles[j];
-
-                        if (checkCollision(p1, p2)) {
-                            resolveCollision(p1, p2);
-                        }
-                    }
-
-                }
-            };
-
-            var computeForces = function () {
-
-                var GRAVITATIONAL_CONSTANT = 0.1;
-
-
-                for (var i = 0; i < Game.particles.length; i++) {
-                    var p = Game.particles[i];
-                    p.a.reset();
-
-                    for (var j = 0; j < i; j++) {
-                        var p2 = Game.particles[j];
-
-                        var distance = p.location.sub(p2.location);
-                        var norm = Math.sqrt(100.0 + distance.lengthSq());
-                        var mag = GRAVITATIONAL_CONSTANT / (norm * norm * norm);
-
-                        var jerkP = distance.mul(mag * p2.mass);
-                        var jerkP2 = distance.mul(mag * p.mass);
-
-                        p.a = p.a.sub(jerkP);
-                        p2.a = p2.a.add(jerkP2);
-
+        const doCollisions = () => {
+            for (let i = 0; i < Game.particles.length; i++) {
+                const p1 = Game.particles[i];
+                for (let j = 0; j < i; j++) {
+                    const p2 = Game.particles[j];
+                    if (checkCollision(p1, p2)) {
+                        resolveCollision(p1, p2);
                     }
                 }
+            }
+        };
 
-            };
-
-            var moveParticles = function (dt) {
-                var i, p;
-
-                for (i = 0; i < Game.particles.length; i++) {
-                    p = Game.particles[i];
-                    p.location = p.location.add(p.v.mul(dt));
+        const computeForces = () => {
+            const GRAVITATIONAL_CONSTANT = 0.1;
+            for (let i = 0; i < Game.particles.length; i++) {
+                const p = Game.particles[i];
+                p.a.reset();
+                for (let j = 0; j < i; j++) {
+                    const p2 = Game.particles[j];
+                    const distance = p.location.sub(p2.location);
+                    const norm = Math.sqrt(100.0 + distance.lengthSq());
+                    const mag = GRAVITATIONAL_CONSTANT / (norm * norm * norm);
+                    const jerkP = distance.mul(mag * p2.mass);
+                    const jerkP2 = distance.mul(mag * p.mass);
+                    p.a = p.a.sub(jerkP);
+                    p2.a = p2.a.add(jerkP2);
                 }
             }
+        };
 
-            var applyForces = function (dt) {
-                var i, p;
-
-                for (i = 0; i < Game.particles.length; i++) {
-                    p = Game.particles[i];
-                    p.v = p.v.add(p.a.mul(dt));
-                }             
+        const moveParticles = (dt) => {
+            for (let i = 0; i < Game.particles.length; i++) {
+                let p = Game.particles[i];
+                p.location = p.location.add(p.v.mul(dt));
             }
+        }
 
-            var doPhysics = function (dt) {
-                // Velocity verlet implementation
-                // http://webphysics.davidson.edu/Projects/SuFischer/node47.html
-                
-                moveParticles(0.5 * dt);    
-                
-                computeForces();    // gravitational attraction does not vary with time.
-
-                applyForces(dt);
-
-                moveParticles(0.5 * dt);
-                
-                doCollisions();
-
-                // verifyConservationOfMomentum();
+        const applyForces = (dt) => {
+            for (let i = 0; i < Game.particles.length; i++) {
+                let p = Game.particles[i];
+                p.v = p.v.add(p.a.mul(dt));
             }
+        }
 
-            var totalMomentum;
-            var verifyConservationOfMomentum = function () {
-                // generate a console warning in case of a significant change in total momentum.
-           
-                totalMomentum = totalMomentum || new Game.Vector(0, 0);
-                var newtotalMom = new Game.Vector(0, 0);
-                for (var i = 0; i < Game.particles.length; i++) {
-                    var p = Game.particles[i];
-                    newtotalMom = newtotalMom.add(p.v.mul(p.mass));
-                }
-                if (Math.abs(newtotalMom.length() - totalMomentum.length()) > 0.00000005)
-                {
-                    console.log("mom", totalMomentum.length(), newtotalMom.length())
-                }
-                totalMomentum = newtotalMom;
+        const doPhysics = (dt) => {
+            moveParticles(0.5 * dt);
+            computeForces();
+            applyForces(dt);
+            moveParticles(0.5 * dt);
+            doCollisions();
+        }
 
+        const computeCenterOfGravity = () => {
+            let result = new Game.Vector();
+            let totalMass = 0.0;
+            for (let i = 0; i < Game.particles.length; i++) {
+                const p = Game.particles[i];
+                result = result.add(p.location.mul(p.mass));
+                totalMass += p.mass;
             }
+            return result.div(totalMass);
+        }
 
-            var computeCenterOfGravity = function () {
-                var result = new Game.Vector();
-                var totalMass = 0.0;
-
-                for (var i = 0; i < Game.particles.length; i++) {
-                    var p = Game.particles[i];
-
-                    
-                    result = result.add(p.location.mul(p.mass));
-
-                    totalMass += p.mass;
-
-                }
-
-                return result.div(totalMass);
-            }
-
-            return {
-                doPhysics: doPhysics,
-                hitTest: hitTest,
-                computeCenterOfGravity: computeCenterOfGravity
-            };
-        }();
-
+        return {
+            doPhysics,
+            hitTest,
+            computeCenterOfGravity
+        };
     })();
 
 
     // CAMERA
-    (function () {
-        Game.camera = function () {
-            var loc = new Game.Vector(0, 0);
-            var zoom = 1;
+    Game.camera = (function () {
+        let loc = new Game.Vector(0, 0);
+        let zoom = 1;
 
+        const screenLocToCanvasLoc = (loc) => {
+            let canvasLoc = loc;
+            canvasLoc = loc.div(Game.camera.zoom)
+            canvasLoc = canvasLoc.add(Game.camera.loc);
+            return canvasLoc;
+        }
 
-            var screenLocToCanvasLoc = function (loc) {
-                var canvasLoc = loc;
+        const zoomIn = (loc) => {
+            if (Game.camera.zoom > 10) return;
+            zoomInternal(loc, false);
+        };
 
-                canvasLoc = loc.div(Game.camera.zoom)
+        const zoomOut = (loc) => {
+            if (Game.camera.zoom < 0.1) return;
+            zoomInternal(loc, true);
+        };
 
-                canvasLoc = canvasLoc.add(Game.camera.loc);
+        const zoomInternal = (loc, reverse) => {
+            const ZOOM_RATE = 1.2;
+            const oldZoom = Game.camera.zoom;
+            let newZoom = reverse ? oldZoom / ZOOM_RATE : oldZoom * ZOOM_RATE;
+            const oldLoc = Game.camera.loc;
+            const locDiff = loc.div(oldZoom).sub(loc.div(newZoom));
+            const newLoc = oldLoc.add(locDiff);
+            Game.camera.loc = newLoc;
+            Game.camera.zoom = newZoom;
+        };
 
-                return canvasLoc;
+        const moveCamera = () => {
+            if (Game.controls.lockToCenter) {
+                moveCameraWithCenterOfGravity();
+            } else {
+                moveCameraWithArrows();
             }
+        }
 
-            var zoomIn = function (loc) {
-                if (Game.camera.zoom > 10)
-                    return;
-                
-                zoomInternal(loc, false);
-            };
+        const moveCameraWithCenterOfGravity = () => {
+            const cog = Game.physics.computeCenterOfGravity();
+            const screenCenter = new Game.Vector(Game.canvas.width / 2, Game.canvas.height / 2).div(Game.camera.zoom);
+            const newCamLoc = cog.sub(screenCenter);
+            const diff = newCamLoc.sub(Game.camera.loc).div(10);
+            Game.camera.loc = Game.camera.loc.add(diff);
+        }
 
-            var zoomOut = function (loc) {
-                if (Game.camera.zoom < 0.1)
-                    return;
+        const moveCameraWithArrows = () => {
+            const speed = 400;
+            const step = (1000 / 60) / 1000;
+            if (Game.controls.left) Game.camera.loc.x -= speed * step;
+            if (Game.controls.up) Game.camera.loc.y -= speed * step;
+            if (Game.controls.right) Game.camera.loc.x += speed * step;
+            if (Game.controls.down) Game.camera.loc.y += speed * step;
+        }
 
-                zoomInternal(loc, true);
-            };
-
-            var zoomInternal = function (loc, reverse) {
-                var ZOOM_RATE = 1.2;
-
-                var oldZoom = Game.camera.zoom;
-                var newZoom;
-
-                if (reverse)
-                    newZoom = oldZoom / ZOOM_RATE;
-                else
-                    newZoom = oldZoom * ZOOM_RATE;
-                
-
-                var oldLoc = Game.camera.loc;
-                var locDiff = loc.div(oldZoom).sub(loc.div(newZoom));
-                var newLoc = oldLoc.add(locDiff);
-
-                Game.camera.loc = newLoc;
-                Game.camera.zoom = newZoom;
-
-            };
-
-            function moveCamera() {
-
-                if (Game.controls.lockToCenter)
-                    moveCameraWithCenterOfGravity();
-                else
-                    moveCameraWithArrows();
-
-            }
-
-            function moveCameraWithCenterOfGravity() {
-                var cog = Game.physics.computeCenterOfGravity();
-
-                var screenCenter = new Game.Vector(canvas.width / 2, canvas.height / 2).div(Game.camera.zoom);
-
-
-                var newCamLoc = cog.sub(screenCenter);
-
-                // slowly move the camera to new location
-                var diff = newCamLoc.sub(Game.camera.loc).div(10);
-
-                Game.camera.loc = Game.camera.loc.add(diff);
-
-            }
-
-            function moveCameraWithArrows() {
-                var speed = 400;
-                var step = (1000 / 60) / 1000; // todo : what's going on?
-
-                if (Game.controls.left)
-                    Game.camera.loc.x -= speed * step;
-                if (Game.controls.up)
-                    Game.camera.loc.y -= speed * step;
-                if (Game.controls.right)
-                    Game.camera.loc.x += speed * step;
-                if (Game.controls.down)
-                    Game.camera.loc.y += speed * step;
-            }
-
-            return {
-                loc: loc,
-                zoom: zoom,
-                zoomIn: zoomIn,
-                zoomOut: zoomOut,
-                screenLocToCanvasLoc: screenLocToCanvasLoc,
-                moveCamera: moveCamera
-            };
-        }();
+        return {
+            loc,
+            zoom,
+            zoomIn,
+            zoomOut,
+            screenLocToCanvasLoc,
+            moveCamera
+        };
     })();
 
 
     // RENDERING
-    (function () {
+    Game.rendering = (function () {
+        let skipFramesPerTrail = 0;
+        let fps, fpsLast, fpslastUpdated;
 
-        function render() {
-
-            var ctx = canvas.getContext("2d");
-
-            // reset transformation
-            ctx.setTransform(1, 0, 0, 1, 0, 0);
-
-            // clear screen
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-            ctx.scale(Game.camera.zoom, Game.camera.zoom);
-
-            renderGrid(ctx);
-
-            // pan ctx according to camera
-            ctx.translate(-Game.camera.loc.x, -Game.camera.loc.y);
-
-
-            renderParticles(ctx);
-
-
-            renderDebugInfo(ctx);
-
-        }
-
-        function renderGrid(ctx) {
-            var i;
-            var gridSize = 100;
-
-
-            var gridHeight = canvas.height / Game.camera.zoom;
-            var gridWidth = canvas.width / Game.camera.zoom;
-
+        const renderGrid = (ctx) => {
+            const gridSize = 100;
+            const gridHeight = Game.canvas.height / Game.camera.zoom;
+            const gridWidth = Game.canvas.width / Game.camera.zoom;
             ctx.beginPath();
-
-
-            // Pseudo scrolling. Grid lines are generated only for the view area of the camera.
-            var cameraXPan = Game.camera.loc.x % gridSize;
-            var cameraYPan = Game.camera.loc.y % gridSize;
-
-            
-            // horizontal lines
-            for (i = -cameraXPan; i <= gridWidth; i += gridSize) {
+            const cameraXPan = Game.camera.loc.x % gridSize;
+            const cameraYPan = Game.camera.loc.y % gridSize;
+            for (let i = -cameraXPan; i <= gridWidth; i += gridSize) {
                 ctx.moveTo(i, 0);
                 ctx.lineTo(i, gridHeight);
             }
-
-            // vertical lines
-            for (i = -cameraYPan; i <= gridHeight; i += gridSize) {
+            for (let i = -cameraYPan; i <= gridHeight; i += gridSize) {
                 ctx.moveTo(0, i);
                 ctx.lineTo(gridWidth, i);
             }
-
             ctx.lineWidth = 0.1;
             ctx.strokeStyle = "#555";
             ctx.stroke();
         }
 
+        const addParticleTrails = (p) => {
+            const MAX_TRAILS_LENGTH = 40;
+            p.trails.push(p.location);
+            if (p.trails.length > MAX_TRAILS_LENGTH) p.trails.shift();
+        }
 
-        function renderParticleTrails(ctx, p, addTrails) {
-            var i, trailLoc;
-
+        const renderParticleTrails = (ctx, p, addTrails) => {
             p.trails = p.trails || [];
-
-            if (addTrails) {
-                addParticleTrails(p);
-            }
-
-            // grouping a number of trails in one canvas path for performance.
-            var TRAILS_IN_PATH = 5;
-
-            // start from particle location
+            if (addTrails) addParticleTrails(p);
+            const TRAILS_IN_PATH = 5;
             ctx.moveTo(p.location.x, p.location.y);
-
-            // follow all the trails from the end
-            for (i = p.trails.length - 1; i >= 0; i -= TRAILS_IN_PATH) {
-                
+            for (let i = p.trails.length - 1; i >= 0; i -= TRAILS_IN_PATH) {
                 ctx.beginPath();
                 ctx.lineTo(p.trails[i].x, p.trails[i].y);
-
-                for (var j = i; j >= Math.max(i - TRAILS_IN_PATH, 0); j--) {
-                    trailLoc = p.trails[j];
+                for (let j = i; j >= Math.max(i - TRAILS_IN_PATH, 0); j--) {
+                    let trailLoc = p.trails[j];
                     ctx.lineTo(trailLoc.x, trailLoc.y);
                 }
-
-                var opacity = i / p.trails.length / 5; 
-
+                const opacity = i / p.trails.length / 5;
                 ctx.lineWidth = 3;
                 ctx.strokeStyle = p.color;
                 ctx.globalAlpha = opacity;
                 ctx.stroke();
             }
-
-            ctx.globalAlpha = 1;    // reset context opacity
-            
+            ctx.globalAlpha = 1;
         }
 
-        function addParticleTrails(p) {
-            var MAX_TRAILS_LENGTH = 40;
-
-            p.trails.push(p.location);
-            if (p.trails.length > MAX_TRAILS_LENGTH)
-                p.trails.shift();   // consider using queue.js for performance
-        }
-
-        function renderParticle(ctx, p) {
-
+        const renderParticle = (ctx, p) => {
             ctx.beginPath();
-            // ctx.moveTo(p.location.x, p.location.y);
             ctx.arc(p.location.x, p.location.y, p.radius, 0, Math.PI * 2, false);
             ctx.fillStyle = p.color;
             ctx.fill();
         }
 
-        var skipFramesPerTrail = 0;
-        function shouldAddTrails() {
-
-            var FRAMES_PER_TRAIL = 2;
-
+        const shouldAddTrails = () => {
+            const FRAMES_PER_TRAIL = 2;
             skipFramesPerTrail++;
-            if (skipFramesPerTrail < FRAMES_PER_TRAIL) {
-                return false;
-            }
+            if (skipFramesPerTrail < FRAMES_PER_TRAIL) return false;
             skipFramesPerTrail = 0;
             return true;
         }
 
-
-        function renderParticles(ctx) {
-            var i, p;
-
-            var addTrails = shouldAddTrails();
-            for (i = 0; i < Game.particles.length; i++) {
-                p = Game.particles[i];
-                renderParticleTrails(ctx, p, addTrails);
+        const renderParticles = (ctx) => {
+            const addTrails = shouldAddTrails();
+            for (let i = 0; i < Game.particles.length; i++) {
+                renderParticleTrails(ctx, Game.particles[i], addTrails);
             }
-
-            for (i = 0; i < Game.particles.length; i++) {
-                p = Game.particles[i];
-
-                renderParticle(ctx, p);
+            for (let i = 0; i < Game.particles.length; i++) {
+                renderParticle(ctx, Game.particles[i]);
             }
-
         }
 
+        const renderParticleVectors = (ctx) => {
+            for (let i = 0; i < Game.particles.length; i++) {
+                const p = Game.particles[i];
+                ctx.setLineDash([3, 7]);
+                ctx.lineWidth = 0.3;
+                ctx.beginPath();
+                ctx.moveTo(p.location.x, p.location.y);
+                ctx.lineTo(p.location.x + p.a.x * 200, p.location.y + p.a.y * 200);
+                ctx.strokeStyle = 'rgba(255, 0, 0, 0.5)';
+                ctx.stroke();
+                ctx.beginPath();
+                ctx.moveTo(p.location.x, p.location.y);
+                ctx.lineTo(p.location.x + p.v.x * 5, p.location.y + p.v.y * 5);
+                ctx.strokeStyle = 'rgba(0, 255, 0, 0.5)';
+                ctx.stroke();
+                ctx.setLineDash([]);
+            }
+        }
 
-        var fps, fpsLast, fpslastUpdated;
-
-        function renderDebugInfo(ctx) {
-
+        const renderDebugInfo = (ctx) => {
             renderParticleVectors(ctx)
-            
             if (!fpslastUpdated || window.performance.now() - fpslastUpdated >= 1000) {
                 fpsLast = fps;
                 fpslastUpdated = window.performance.now();
                 fps = 0;
             }
             fps++;
-
             if (fpsLast) {
                 ctx.save();
                 ctx.setTransform(1, 0, 0, 1, 0, 0);
-
                 ctx.font = "14px monospace";
                 ctx.fillStyle = "#555";
                 ctx.fillText(fpsLast + ' fps', 5, 15);
                 ctx.restore();
             }
-
         }
 
-        function renderParticleVectors(ctx) {
-
-            for (var i = 0; i < Game.particles.length; i++) {
-                var p = Game.particles[i];
-
-
-                ctx.setLineDash([3, 7]);
-                ctx.lineWidth = 0.3;
-
-                // acceleration
-                ctx.beginPath();
-                ctx.moveTo(p.location.x, p.location.y);
-                ctx.lineTo(p.location.x + p.a.x * 200, p.location.y + p.a.y * 200);
-                ctx.strokeStyle = 'rgba(255, 0, 0, 0.5)';
-                ctx.stroke();
-
-                // velocity
-                ctx.beginPath();
-                ctx.moveTo(p.location.x, p.location.y);
-                ctx.lineTo(p.location.x + p.v.x * 5, p.location.y + p.v.y * 5);
-                ctx.strokeStyle = 'rgba(0, 255, 0, 0.5)';
-                ctx.stroke();
-
-
-                ctx.setLineDash([]);
-            }
+        const render = () => {
+            const ctx = Game.canvas.getContext("2d");
+            ctx.setTransform(1, 0, 0, 1, 0, 0);
+            ctx.clearRect(0, 0, Game.canvas.width, Game.canvas.height);
+            ctx.scale(Game.camera.zoom, Game.camera.zoom);
+            renderGrid(ctx);
+            ctx.translate(-Game.camera.loc.x, -Game.camera.loc.y);
+            renderParticles(ctx);
+            renderDebugInfo(ctx);
         }
 
-        Game.render = render;
+        return { render };
     })();
-
 
     // KEYBOARD CONTROLS
-    (function () {
-        Game.controls = {
-            left: false,
-            up: false,
-            right: false,
-            down: false,
-            pause: false,
-            lockToCenter: false,
-            reset: false
-        };
+    Game.controls = {
+        left: false, up: false, right: false, down: false,
+        pause: false, lockToCenter: false, reset: false
+    };
 
-        window.addEventListener("keydown", function (e) {
-            switch (e.keyCode) {
-                case 37: // left arrow
-                case 65: // A
-                    Game.controls.left = true;
-                    Game.controls.lockToCenter = false;
-                    break;
-                case 38: // up arrow
-                case 87: // W
-                    Game.controls.up = true;
-                    Game.controls.lockToCenter = false;
-                    break;
-                case 39: // right arrow
-                case 68: // D
-                    Game.controls.right = true;
-                    Game.controls.lockToCenter = false;
-                    break;
-                case 40: // down arrow
-                case 83: // S
-                    Game.controls.down = true;
-                    Game.controls.lockToCenter = false;
-                    break;
-            }
-        }, false);
+    window.addEventListener("keydown", (e) => {
+        switch (e.keyCode) {
+            case 37: case 65: Game.controls.left = true; Game.controls.lockToCenter = false; break;
+            case 38: case 87: Game.controls.up = true; Game.controls.lockToCenter = false; break;
+            case 39: case 68: Game.controls.right = true; Game.controls.lockToCenter = false; break;
+            case 40: case 83: Game.controls.down = true; Game.controls.lockToCenter = false; break;
+        }
+    }, false);
 
-        window.addEventListener("keyup", function (e) {
-            switch (e.keyCode) {
-                case 37: // left arrow
-                case 65: // A
-                    Game.controls.left = false;
-                    break;
-                case 38: // up arrow
-                case 87: // W
-                    Game.controls.up = false;
-                    break;
-                case 39: // right arrow
-                case 68: // D
-                    Game.controls.right = false;
-                    break;
-                case 40: // down arrow
-                case 83: // S
-                    Game.controls.down = false;
-                    break;
-                case 80: // key P pauses the game
-                    Game.controls.pause = !Game.controls.pause;
-                    break;
-                case 76: // key L locks the camera to center of gravity
-                    Game.controls.lockToCenter = !Game.controls.lockToCenter;
-                    break;
-                case 82: // key R locks the camera to center of gravity
-                    Game.controls.reset = true;
-                    break;
-            }
-        }, false);
-    })();
+    window.addEventListener("keyup", (e) => {
+        switch (e.keyCode) {
+            case 37: case 65: Game.controls.left = false; break;
+            case 38: case 87: Game.controls.up = false; break;
+            case 39: case 68: Game.controls.right = false; break;
+            case 40: case 83: Game.controls.down = false; break;
+            case 80: Game.controls.pause = !Game.controls.pause; break;
+            case 76: Game.controls.lockToCenter = !Game.controls.lockToCenter; break;
+            case 82: Game.controls.reset = true; break;
+        }
+    }, false);
 
 
     // MOUSE INTERACTION
-    (function () {
+    let mouseDownLoc, mouseDownTime;
 
-        var mouseDownLoc, mouseDownTime;
+    const touchOrMouseDown = (x, y) => {
+        mouseDownLoc = new Game.Vector(x - Game.canvas.getBoundingClientRect().left, y - Game.canvas.getBoundingClientRect().top);
+        mouseDownTime = window.performance.now();
+    }
 
-        var touchOrMouseDown = function (x, y) {
+    const touchOrMouseUp = (x, y) => {
+        const mouseUpLoc = new Game.Vector(x - Game.canvas.getBoundingClientRect().left, y - Game.canvas.getBoundingClientRect().top);
+        const mouseUpLocTranslated = Game.camera.screenLocToCanvasLoc(mouseUpLoc);
+        const hitParticle = Game.physics.hitTest(mouseUpLocTranslated);
 
-            mouseDownLoc = new Game.Vector(x - canvas.getBoundingClientRect().left,
-                                      y - canvas.getBoundingClientRect().top);
-
-            mouseDownTime = window.performance.now();
+        if (hitParticle) {
+            hitParticle.selected = true;
+            return;
         }
 
-        var touchOrMouseUp = function (x, y) {
+        const speedVector = mouseUpLoc.sub(mouseDownLoc).div(10);
+        const mouseDownDuration = window.performance.now() - mouseDownTime;
+        const newCircleRadius = mouseDownDuration / 50 + 3;
+        const newCircle = new Game.Circle(mouseUpLocTranslated, speedVector, newCircleRadius);
+        Game.particles.push(newCircle);
+    }
 
-            var mouseUpLoc = new Game.Vector(x - canvas.getBoundingClientRect().left,
-                                        y - canvas.getBoundingClientRect().top);
+    const mouseWheel = (event) => {
+        const mouseLoc = new Game.Vector(event.x - Game.canvas.getBoundingClientRect().left, event.y - Game.canvas.getBoundingClientRect().top);
+        const wheel = event.wheelDelta / 120;
+        if (wheel > 0) Game.camera.zoomIn(mouseLoc);
+        else Game.camera.zoomOut(mouseLoc);
+    }
 
-
-            var mouseUpLocTranslated = Game.camera.screenLocToCanvasLoc(mouseUpLoc);
-
-            var hitParticle = Game.physics.hitTest(mouseUpLocTranslated);
-
-            if (hitParticle) {
-                hitParticle.selected = true;
-                return;
-            }
-
-            var speedVector = mouseUpLoc.sub(mouseDownLoc).div(10);
-
-            var mouseDownDuration = window.performance.now() - mouseDownTime;
-            var newCircleRadius = mouseDownDuration / 50 + 3;
-
-            var newCircle = new Game.Circle(mouseUpLocTranslated, speedVector, newCircleRadius);
-
-            Game.particles.push(newCircle);
-        }
-
-        var mouseWheel = function (event) {
-
-            var mouseLoc = new Game.Vector(event.x - canvas.getBoundingClientRect().left,
-                                        event.y - canvas.getBoundingClientRect().top);
-
-            var wheel = event.wheelDelta / 120;//n or -n
-
-            if (wheel > 0)
-                Game.camera.zoomIn(mouseLoc);
-            else
-                Game.camera.zoomOut(mouseLoc);
-
-
-        }
-
-        Game.canvas.addEventListener("mousedown", function (e) {
-            touchOrMouseDown(e.pageX, e.pageY);
-        });
-        Game.canvas.addEventListener("touchstart", function (e) {
-            touchOrMouseDown(e.changedTouches[0].x, e.changedTouches[0].y);
-        }, false);
-
-        Game.canvas.addEventListener("mouseup", function (e) {
-            touchOrMouseUp(e.pageX, e.pageY);
-        });
-        Game.canvas.addEventListener("touchend", function (e) {
-            touchOrMouseUp(e.changedTouches[0].x, e.changedTouches[0].y);
-        }, false);
-
-        Game.canvas.addEventListener('mousewheel', function (event) {
-            mouseWheel(event);
-            return false;
-        }, false);
-
-    })();
+    Game.canvas.addEventListener("mousedown", (e) => touchOrMouseDown(e.pageX, e.pageY));
+    Game.canvas.addEventListener("touchstart", (e) => touchOrMouseDown(e.changedTouches[0].x, e.changedTouches[0].y), false);
+    Game.canvas.addEventListener("mouseup", (e) => touchOrMouseUp(e.pageX, e.pageY));
+    Game.canvas.addEventListener("touchend", (e) => touchOrMouseUp(e.changedTouches[0].x, e.changedTouches[0].y), false);
+    Game.canvas.addEventListener('mousewheel', (event) => {
+        mouseWheel(event);
+        return false;
+    }, false);
 
 
     // GAME ENGINE
-    (function () {
-        Game.engine = function () {
+    Game.engine = (function () {
 
-            var RAF = window.requestAnimationFrame || window.webkitRequestAnimationFrame || window.mozRequestAnimationFrame || window.oRequestAnimationFrame || window.msRequestAnimationFrame || function (callback) {
-                window.setTimeout(callback, 1000 / 60);
-            };
+        const init = () => {
+            adjustCanvasSize();
+            addInitialParticles();
+        }
 
+        const addInitialParticles = () => {
+            const sun = new Game.Circle(new Game.Vector(0, 0), new Game.Vector(-0.0, -0.05), 16);
+            sun.color = "#EE5";
+            const earth = new Game.Circle(new Game.Vector(250, 0), new Game.Vector(0, 2.6), 4);
+            earth.color = "#66F";
+            const moon = new Game.Circle(new Game.Vector(267, 0), new Game.Vector(0, 3.6), 1);
+            moon.color = "#111";
+            Game.particles.push(sun, earth, moon);
+            Game.camera.loc = new Game.Vector(-Game.canvas.width / 2, -Game.canvas.height / 2);
+        }
 
-            function init() {
+        const reset = () => {
+            Game.particles = [];
+            Game.controls.reset = false;
+        }
 
-                adjustCanvasSize();
-
-                addInitialParticles();
-            }
-
-            function addInitialParticles() {
-
-                var sun = new Game.Circle(
-                    new Game.Vector(0, 0),
-                    new Game.Vector(-0.0, -0.05),
-                    16);
-                sun.color = "#EE5";
-
-
-                var earth = new Game.Circle(
-                    new Game.Vector(250, 0),
-                    new Game.Vector(0, 2.6),
-                    4);
-                earth.color = "#66F";
-
-
-                var moon = new Game.Circle(
-                    new Game.Vector(267, 0),
-                    new Game.Vector(0, 3.6),
-                    1);
-                moon.color = "#111";
-
-                Game.particles.push(sun);
-                Game.particles.push(earth);
-                Game.particles.push(moon);
-
-                // center camera to origin
-                Game.camera.loc = new Game.Vector(-Game.canvas.width / 2, -Game.canvas.height / 2);
-            }
-
-            function reset() {
-                Game.particles = [];
-                Game.controls.reset = false;    // reset the reset flag.
-            }
-
-            function update() {
-
-                if (Game.controls.reset) {
-                    reset();
+        const update = () => {
+            if (Game.controls.reset) reset();
+            if (!Game.controls.pause) {
+                const physicsPerFrame = 8;
+                for (let k = 0; k < physicsPerFrame; k++) {
+                    Game.physics.doPhysics(1.0 / physicsPerFrame);
                 }
-
-
-                if (!Game.controls.pause) {
-
-                    // For accuracy, we have a higher time-resolution for physics engine compared to rendering.
-                    // rendering is the slowest operation in a cycle anyway.
-                    var physicsPerFrame = 8;
-
-                    for (var k = 0; k < physicsPerFrame; k++) {
-                        Game.physics.doPhysics(1.0 / physicsPerFrame);
-                    }
-                }
-
-                
-                Game.camera.moveCamera();
-
-                Game.render();
-
-                RAF(update);
             }
+            Game.camera.moveCamera();
+            Game.rendering.render();
+            window.requestAnimationFrame(update);
+        }
 
-            var adjustCanvasSize = function () {
-                var adjustInternal = function () {
-                    canvas.width = window.innerWidth;
-                    canvas.height = window.innerHeight;
-                };
-                adjustInternal();
-                window.onresize = adjustInternal;
+        const adjustCanvasSize = () => {
+            const adjustInternal = () => {
+                Game.canvas.width = window.innerWidth;
+                Game.canvas.height = window.innerHeight;
             };
+            adjustInternal();
+            window.onresize = adjustInternal;
+        };
 
-            function play() {
-                init();
-                update();
-            }
+        const play = () => {
+            init();
+            update();
+        }
 
-            return {
-                play: play
-            };
-        }();
+        return { play };
     })();
 
 
-    window.onload = function () {
+    window.onload = () => {
         Game.engine.play();
     }
 
