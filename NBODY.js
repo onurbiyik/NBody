@@ -467,17 +467,20 @@
             Game.controls.reset = false;
         }
 
-        const update = () => {
-            if (Game.controls.reset) reset();
+        const updatePhysics = () => {
             if (!Game.controls.pause) {
                 const physicsPerFrame = 8;
                 for (let k = 0; k < physicsPerFrame; k++) {
                     Game.physics.doPhysics(1.0 / physicsPerFrame);
                 }
             }
+        }
+
+        const updateGraphics = () => {
+            if (Game.controls.reset) reset();
             Game.camera.moveCamera();
             Game.rendering.render();
-            window.requestAnimationFrame(update);
+            window.requestAnimationFrame(updateGraphics);
         }
 
         const adjustCanvasSize = () => {
@@ -491,7 +494,9 @@
 
         const play = () => {
             init();
-            update();
+            const physicsInterval = 1000 / 60;
+            window.setInterval(updatePhysics, physicsInterval);
+            updateGraphics();
         }
 
         return { play };
