@@ -502,7 +502,7 @@
             window.onresize = adjustInternal;
         };
 
-        const play = () => {
+        function play() {
             init();
             const physicsInterval = 1000 / 60;
             window.setInterval(updatePhysics, physicsInterval);
