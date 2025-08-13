@@ -355,6 +355,7 @@
                 ctx.font = "14px monospace";
                 ctx.fillStyle = "#555";
                 ctx.fillText(fpsLast + ' fps', 5, 15);
+                ctx.fillText(Game.engine.timeMultiplier + 'x speed', 5, 30);
                 ctx.restore();
             }
         }
@@ -385,6 +386,8 @@
             case 38: case 87: Game.controls.up = true; Game.controls.lockToCenter = false; break;
             case 39: case 68: Game.controls.right = true; Game.controls.lockToCenter = false; break;
             case 40: case 83: Game.controls.down = true; Game.controls.lockToCenter = false; break;
+            case 219: Game.engine.timeMultiplier /= 2; break; // [
+            case 221: Game.engine.timeMultiplier *= 2; break; // ]
         }
     }, false);
 
@@ -446,6 +449,11 @@
     // GAME ENGINE
     Game.engine = (function () {
 
+        const engine = {
+            play,
+            timeMultiplier: 1
+        };
+
         const init = () => {
             adjustCanvasSize();
             addInitialParticles();
@@ -470,7 +478,9 @@
         const updatePhysics = () => {
             if (!Game.controls.pause) {
                 const physicsPerFrame = 8;
-                for (let k = 0; k < physicsPerFrame; k++) {
+                if (engine.timeMultiplier < 1 / 32) engine.timeMultiplier = 1 / 32;
+                if (engine.timeMultiplier > 32) engine.timeMultiplier = 32;
+                for (let k = 0; k < physicsPerFrame * engine.timeMultiplier; k++) {
                     Game.physics.doPhysics(1.0 / physicsPerFrame);
                 }
             }
@@ -499,7 +509,7 @@
             updateGraphics();
         }
 
-        return { play };
+        return engine;
     })();
 
 
