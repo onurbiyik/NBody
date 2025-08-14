@@ -70,6 +70,7 @@
             this.v = velocity;
             this.a = new Game.Vector();
             this.color = randomColor();
+            this.trails = [];
         }
     }
     Game.Circle = Circle;
@@ -234,20 +235,39 @@
             if (Game.controls.down) Game.camera.loc.y += speed * step;
         }
 
+        const isParticleInView = (p) => {
+            const canvas = Game.canvas;
+            const zoom = Game.camera.zoom;
+            const loc = Game.camera.loc;
+
+            const viewLeft = loc.x;
+            const viewRight = loc.x + canvas.width / zoom;
+            const viewTop = loc.y;
+            const viewBottom = loc.y + canvas.height / zoom;
+
+            const particleLeft = p.location.x - p.radius;
+            const particleRight = p.location.x + p.radius;
+            const particleTop = p.location.y - p.radius;
+            const particleBottom = p.location.y + p.radius;
+
+            return particleRight >= viewLeft && particleLeft <= viewRight &&
+                   particleBottom >= viewTop && particleTop <= viewBottom;
+        }
+
         return {
             loc,
             zoom,
             zoomIn,
             zoomOut,
             screenLocToCanvasLoc,
-            moveCamera
+            moveCamera,
+            isParticleInView
         };
     })();
 
 
     // RENDERING
     Game.rendering = (function () {
-        let skipFramesPerTrail = 0;
         let fps, fpsLast, fpslastUpdated;
 
         const renderGrid = (ctx) => {
@@ -270,23 +290,15 @@
             ctx.stroke();
         }
 
-        const addParticleTrails = (p) => {
-            const MAX_TRAILS_LENGTH = 40;
-            p.trails.push(p.location);
-            if (p.trails.length > MAX_TRAILS_LENGTH) p.trails.shift();
-        }
-
-        const renderParticleTrails = (ctx, p, addTrails) => {
-            p.trails = p.trails || [];
-            if (addTrails) addParticleTrails(p);
+        const renderParticleTrails = (ctx, p) => {
             const TRAILS_IN_PATH = 5;
-            ctx.moveTo(p.location.x, p.location.y);
             for (let i = p.trails.length - 1; i >= 0; i -= TRAILS_IN_PATH) {
+                if (!p.trails[i]) continue;
                 ctx.beginPath();
-                ctx.lineTo(p.trails[i].x, p.trails[i].y);
-                for (let j = i; j >= Math.max(i - TRAILS_IN_PATH, 0); j--) {
+                ctx.moveTo(p.trails[i].x, p.trails[i].y);
+                for (let j = i - 1; j >= Math.max(i - TRAILS_IN_PATH, 0); j--) {
                     let trailLoc = p.trails[j];
-                    ctx.lineTo(trailLoc.x, trailLoc.y);
+                    if (trailLoc) ctx.lineTo(trailLoc.x, trailLoc.y);
                 }
                 const opacity = i / p.trails.length / 5;
                 ctx.lineWidth = 3;
@@ -304,21 +316,18 @@
             ctx.fill();
         }
 
-        const shouldAddTrails = () => {
-            const FRAMES_PER_TRAIL = 2;
-            skipFramesPerTrail++;
-            if (skipFramesPerTrail < FRAMES_PER_TRAIL) return false;
-            skipFramesPerTrail = 0;
-            return true;
-        }
-
         const renderParticles = (ctx) => {
-            const addTrails = shouldAddTrails();
             for (let i = 0; i < Game.particles.length; i++) {
-                renderParticleTrails(ctx, Game.particles[i], addTrails);
+                const p = Game.particles[i];
+                if (Game.camera.isParticleInView(p)) {
+                    renderParticleTrails(ctx, p);
+                }
             }
             for (let i = 0; i < Game.particles.length; i++) {
-                renderParticle(ctx, Game.particles[i]);
+                const p = Game.particles[i];
+                if (Game.camera.isParticleInView(p)) {
+                    renderParticle(ctx, p);
+                }
             }
         }
 
@@ -454,6 +463,12 @@
             timeMultiplier: 1
         };
 
+        const addParticleTrails = (p) => {
+            const MAX_TRAILS_LENGTH = 200;
+            p.trails.push(p.location);
+            if (p.trails.length > MAX_TRAILS_LENGTH) p.trails.shift();
+        }
+
         const init = () => {
             adjustCanvasSize();
             addInitialParticles();
@@ -482,6 +497,9 @@
                 if (engine.timeMultiplier > 32) engine.timeMultiplier = 32;
                 for (let k = 0; k < physicsPerFrame * engine.timeMultiplier; k++) {
                     Game.physics.doPhysics(1.0 / physicsPerFrame);
+                    for (let i = 0; i < Game.particles.length; i++) {
+                        addParticleTrails(Game.particles[i]);
+                    }
                 }
             }
         }
