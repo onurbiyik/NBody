@@ -414,7 +414,7 @@
 
 
     // MOUSE INTERACTION
-    let mouseDownLoc, mouseDownTime, maxTouches = 0, pinchDist = 0;
+    let mouseDownLoc, mouseDownTime;
 
     const touchOrMouseDown = (x, y) => {
         mouseDownLoc = new Game.Vector(x - Game.canvas.getBoundingClientRect().left, y - Game.canvas.getBoundingClientRect().top);
@@ -422,9 +422,6 @@
     }
 
     const touchOrMouseUp = (x, y) => {
-        if (maxTouches > 1) {
-            return;
-        }
         const mouseUpLoc = new Game.Vector(x - Game.canvas.getBoundingClientRect().left, y - Game.canvas.getBoundingClientRect().top);
         const mouseUpLocTranslated = Game.camera.screenLocToCanvasLoc(mouseUpLoc);
         const hitParticle = Game.physics.hitTest(mouseUpLocTranslated);
@@ -436,11 +433,9 @@
 
         const speedVector = mouseUpLoc.sub(mouseDownLoc).div(10);
         const mouseDownDuration = window.performance.now() - mouseDownTime;
-        if (mouseDownDuration < 500) { // Prevent creating huge particles when dragging
-            const newCircleRadius = mouseDownDuration / 50 + 3;
-            const newCircle = new Game.Circle(mouseUpLocTranslated, speedVector, newCircleRadius);
-            Game.particles.push(newCircle);
-        }
+        const newCircleRadius = mouseDownDuration / 50 + 3;
+        const newCircle = new Game.Circle(mouseUpLocTranslated, speedVector, newCircleRadius);
+        Game.particles.push(newCircle);
     }
 
     const mouseWheel = (event) => {
@@ -451,48 +446,9 @@
     }
 
     Game.canvas.addEventListener("mousedown", (e) => touchOrMouseDown(e.pageX, e.pageY));
-
-    Game.canvas.addEventListener("touchstart", (e) => {
-        maxTouches = Math.max(maxTouches, e.touches.length);
-        if (e.touches.length === 2) {
-            const t1 = e.touches[0];
-            const t2 = e.touches[1];
-            pinchDist = Math.hypot(t1.pageX - t2.pageX, t1.pageY - t2.pageY);
-        }
-        touchOrMouseDown(e.changedTouches[0].pageX, e.changedTouches[0].pageY);
-    }, false);
-
+    Game.canvas.addEventListener("touchstart", (e) => touchOrMouseDown(e.changedTouches[0].x, e.changedTouches[0].y), false);
     Game.canvas.addEventListener("mouseup", (e) => touchOrMouseUp(e.pageX, e.pageY));
-
-    Game.canvas.addEventListener("touchend", (e) => {
-        touchOrMouseUp(e.changedTouches[0].pageX, e.changedTouches[0].pageY);
-        if (e.touches.length === 0) { // last finger lifted
-            maxTouches = 0;
-            pinchDist = 0;
-        }
-    }, false);
-
-    Game.canvas.addEventListener('touchmove', (e) => {
-        if (e.touches.length === 2) {
-            e.preventDefault();
-            const t1 = e.touches[0];
-            const t2 = e.touches[1];
-            const currentDist = Math.hypot(t1.pageX - t2.pageX, t1.pageY - t2.pageY);
-            const midPoint = {
-                x: (t1.pageX + t2.pageX) / 2,
-                y: (t1.pageY + t2.pageY) / 2
-            };
-            const mouseLoc = new Game.Vector(midPoint.x - Game.canvas.getBoundingClientRect().left, midPoint.y - Game.canvas.getBoundingClientRect().top);
-
-            if (currentDist > pinchDist) {
-                Game.camera.zoomIn(mouseLoc);
-            } else if (currentDist < pinchDist) {
-                Game.camera.zoomOut(mouseLoc);
-            }
-            pinchDist = currentDist;
-        }
-    }, false);
-
+    Game.canvas.addEventListener("touchend", (e) => touchOrMouseUp(e.changedTouches[0].x, e.changedTouches[0].y), false);
     Game.canvas.addEventListener('mousewheel', (event) => {
         mouseWheel(event);
         return false;
