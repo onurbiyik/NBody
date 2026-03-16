@@ -1,539 +1,361 @@
 (function (window) {
     "use strict";
 
-    const Game = {
-        canvas: window.document.getElementById("canvas"),
-        particles: []
-    };
+    // ── Three.js scene setup ────────────────────────────────────────────────
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x020209);
+
+    const renderer = new THREE.WebGLRenderer({
+        canvas: document.getElementById("canvas"),
+        antialias: true
+    });
+    renderer.setPixelRatio(window.devicePixelRatio);
+    renderer.setSize(window.innerWidth, window.innerHeight);
+
+    const threeCamera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 100000);
+    threeCamera.position.set(200, 350, 700);
+    threeCamera.lookAt(0, 0, 0);
+
+    const orbitControls = new THREE.OrbitControls(threeCamera, renderer.domElement);
+    orbitControls.enableDamping = true;
+    orbitControls.dampingFactor = 0.05;
+    orbitControls.minDistance = 5;
+    orbitControls.maxDistance = 50000;
+
+    // Lighting: dim ambient + point light that follows the sun
+    scene.add(new THREE.AmbientLight(0x112233, 2));
+    const sunLight = new THREE.PointLight(0xffffff, 3, 8000, 1);
+    scene.add(sunLight);
+
+    // Stars
+    const starPos = new Float32Array(3000 * 3);
+    for (let i = 0; i < starPos.length; i++) starPos[i] = (Math.random() - 0.5) * 80000;
+    const starGeo = new THREE.BufferGeometry();
+    starGeo.setAttribute("position", new THREE.BufferAttribute(starPos, 3));
+    scene.add(new THREE.Points(starGeo, new THREE.PointsMaterial({ color: 0xffffff, size: 6 })));
+
+    // Reference grid in the XZ plane
+    scene.add(new THREE.GridHelper(2000, 20, 0x333333, 0x1a1a2e));
+
+    // ── Game namespace ──────────────────────────────────────────────────────
+    const Game = { particles: [] };
     window.Game = Game;
 
-
+    // ── 3D Vector ───────────────────────────────────────────────────────────
     class Vector {
-        constructor(x, y) {
+        constructor(x, y, z) {
             this.x = x || 0;
             this.y = y || 0;
+            this.z = z || 0;
         }
 
-        reset() {
-            this.x = 0;
-            this.y = 0;
-        }
-
-        mul(mul) {
-            return new Vector(this.x * mul, this.y * mul);
-        }
-
-        div(div) {
-            return new Vector(this.x / div, this.y / div);
-        }
-
-        add(add) {
-            return new Vector(this.x + add.x, this.y + add.y);
-        }
-
-        sub(sub) {
-            return new Vector(this.x - sub.x, this.y - sub.y);
-        }
-
-        dot(v) {
-            return (this.x * v.x + this.y * v.y);
-        }
-
-        length() {
-            return Math.sqrt(this.dot(this));
-        }
-
-        lengthSq() {
-            return this.dot(this);
-        }
-
-        normalize() {
-            return this.div(this.length());
-        }
+        reset() { this.x = 0; this.y = 0; this.z = 0; }
+        mul(s)  { return new Vector(this.x * s, this.y * s, this.z * s); }
+        div(s)  { return new Vector(this.x / s, this.y / s, this.z / s); }
+        add(v)  { return new Vector(this.x + v.x, this.y + v.y, this.z + v.z); }
+        sub(v)  { return new Vector(this.x - v.x, this.y - v.y, this.z - v.z); }
+        dot(v)  { return this.x * v.x + this.y * v.y + this.z * v.z; }
+        length()   { return Math.sqrt(this.dot(this)); }
+        lengthSq() { return this.dot(this); }
+        normalize() { return this.div(this.length()); }
     }
     Game.Vector = Vector;
 
-    // CIRCLE
+    // ── Circle (body) ───────────────────────────────────────────────────────
+    const MAX_TRAILS = 300;
+
     const randomColor = () => {
-        const max = 14;   // to prevent too light colors on a white background. out of 16.
-        const r = Math.floor(Math.random() * max);
-        const g = Math.floor(Math.random() * max);
-        const b = Math.floor(Math.random() * max);
-        return '#' + r.toString(16) + g.toString(16) + b.toString(16);
-    }
+        const c = new THREE.Color();
+        c.setHSL(Math.random(), 0.8, 0.6);
+        return c.getHex();
+    };
 
     class Circle {
         constructor(location, velocity, radius) {
             this.location = location;
-            this.radius = radius;
-            this.mass = 4 / 3 * Math.PI * radius * radius * radius; // sphere volume
-            this.v = velocity;
-            this.a = new Game.Vector();
-            this.color = randomColor();
-            this.trails = [];
+            this.radius   = radius;
+            this.mass     = 4 / 3 * Math.PI * radius * radius * radius;
+            this.v        = velocity;
+            this.a        = new Vector();
+            this.trails   = [];
+
+            const colorHex = randomColor();
+
+            // Sphere mesh
+            const mat = new THREE.MeshPhongMaterial({
+                color: colorHex,
+                emissive: colorHex,
+                emissiveIntensity: 0.25,
+                shininess: 60
+            });
+            this.mesh = new THREE.Mesh(new THREE.SphereGeometry(radius, 16, 12), mat);
+            this.mesh.position.set(location.x, location.y, location.z);
+            scene.add(this.mesh);
+
+            // Trail line (pre-allocated buffer)
+            this.trailBuffer = new Float32Array(MAX_TRAILS * 3);
+            this.trailGeo    = new THREE.BufferGeometry();
+            this.trailGeo.setAttribute("position", new THREE.BufferAttribute(this.trailBuffer, 3));
+            this.trailGeo.setDrawRange(0, 0);
+            this.trailLine = new THREE.Line(
+                this.trailGeo,
+                new THREE.LineBasicMaterial({ color: colorHex, opacity: 0.55, transparent: true })
+            );
+            scene.add(this.trailLine);
+        }
+
+        remove() {
+            scene.remove(this.mesh);
+            this.mesh.geometry.dispose();
+            this.mesh.material.dispose();
+            scene.remove(this.trailLine);
+            this.trailGeo.dispose();
+        }
+
+        syncMesh() {
+            this.mesh.position.set(this.location.x, this.location.y, this.location.z);
+        }
+
+        syncTrail() {
+            const count = Math.min(this.trails.length, MAX_TRAILS);
+            for (let i = 0; i < count; i++) {
+                const t = this.trails[i];
+                this.trailBuffer[i * 3]     = t.x;
+                this.trailBuffer[i * 3 + 1] = t.y;
+                this.trailBuffer[i * 3 + 2] = t.z;
+            }
+            this.trailGeo.setDrawRange(0, count);
+            this.trailGeo.attributes.position.needsUpdate = true;
         }
     }
     Game.Circle = Circle;
 
-
-    // PHYSICS
+    // ── Physics ─────────────────────────────────────────────────────────────
     Game.physics = (function () {
 
         const checkCollision = (a, b) => {
-            const dist = a.location.sub(b.location);
-            const totalRad = a.radius + b.radius;
-            return (dist.lengthSq() < totalRad);
+            const r = a.radius + b.radius;
+            return a.location.sub(b.location).lengthSq() < r * r;
         };
 
         const resolveCollision = (p1, p2) => {
-            const displacement = p1.location.sub(p2.location);
-            const normalized = displacement.normalize();
-            const v = p2.v.sub(p1.v);
-            const dot = normalized.dot(v);
+            const n  = p1.location.sub(p2.location).normalize();
+            const dv = p2.v.sub(p1.v);
+            const dot = n.dot(dv);
             const totalMass = p1.mass + p2.mass;
-            const c = normalized.mul(2 * dot / totalMass);
-            p1.v = p1.v.add(c.mul(p2.mass));
-            p2.v = p2.v.sub(c.mul(p1.mass));
+            const imp = n.mul(2 * dot / totalMass);
+            p1.v = p1.v.add(imp.mul(p2.mass));
+            p2.v = p2.v.sub(imp.mul(p1.mass));
         };
 
         const hitTest = (loc) => {
-            for (let i = 0; i < Game.particles.length; i++) {
-                const p = Game.particles[i];
-                const diff = p.location.sub(loc);
-                if (diff.length() < p.radius)
-                    return p;
+            for (const p of Game.particles) {
+                if (p.location.sub(loc).length() < p.radius) return p;
             }
             return null;
         };
 
         const doCollisions = () => {
             for (let i = 0; i < Game.particles.length; i++) {
-                const p1 = Game.particles[i];
                 for (let j = 0; j < i; j++) {
-                    const p2 = Game.particles[j];
-                    if (checkCollision(p1, p2)) {
-                        resolveCollision(p1, p2);
-                    }
+                    if (checkCollision(Game.particles[i], Game.particles[j]))
+                        resolveCollision(Game.particles[i], Game.particles[j]);
                 }
             }
         };
 
         const computeForces = () => {
-            const GRAVITATIONAL_CONSTANT = 0.1;
+            const G = 0.1;
             for (let i = 0; i < Game.particles.length; i++) {
-                const p = Game.particles[i];
-                p.a.reset();
+                Game.particles[i].a.reset();
                 for (let j = 0; j < i; j++) {
-                    const p2 = Game.particles[j];
-                    const distance = p.location.sub(p2.location);
-                    const norm = Math.sqrt(100.0 + distance.lengthSq());
-                    const mag = GRAVITATIONAL_CONSTANT / (norm * norm * norm);
-                    const jerkP = distance.mul(mag * p2.mass);
-                    const jerkP2 = distance.mul(mag * p.mass);
-                    p.a = p.a.sub(jerkP);
-                    p2.a = p2.a.add(jerkP2);
+                    const pi = Game.particles[i], pj = Game.particles[j];
+                    const d    = pi.location.sub(pj.location);
+                    const norm = Math.sqrt(100.0 + d.lengthSq());
+                    const mag  = G / (norm * norm * norm);
+                    pi.a = pi.a.sub(d.mul(mag * pj.mass));
+                    pj.a = pj.a.add(d.mul(mag * pi.mass));
                 }
             }
         };
-
-        const moveParticles = (dt) => {
-            for (let i = 0; i < Game.particles.length; i++) {
-                let p = Game.particles[i];
-                p.location = p.location.add(p.v.mul(dt));
-            }
-        }
-
-        const applyForces = (dt) => {
-            for (let i = 0; i < Game.particles.length; i++) {
-                let p = Game.particles[i];
-                p.v = p.v.add(p.a.mul(dt));
-            }
-        }
 
         const doPhysics = (dt) => {
-            moveParticles(0.5 * dt);
+            for (const p of Game.particles) p.location = p.location.add(p.v.mul(0.5 * dt));
             computeForces();
-            applyForces(dt);
-            moveParticles(0.5 * dt);
+            for (const p of Game.particles) p.v = p.v.add(p.a.mul(dt));
+            for (const p of Game.particles) p.location = p.location.add(p.v.mul(0.5 * dt));
             doCollisions();
-        }
+        };
 
         const computeCenterOfGravity = () => {
-            let result = new Game.Vector();
-            let totalMass = 0.0;
-            for (let i = 0; i < Game.particles.length; i++) {
-                const p = Game.particles[i];
-                result = result.add(p.location.mul(p.mass));
+            let cog = new Vector(), totalMass = 0;
+            for (const p of Game.particles) {
+                cog = cog.add(p.location.mul(p.mass));
                 totalMass += p.mass;
             }
-            return result.div(totalMass);
-        }
-
-        return {
-            doPhysics,
-            hitTest,
-            computeCenterOfGravity
+            return totalMass > 0 ? cog.div(totalMass) : cog;
         };
+
+        return { doPhysics, hitTest, computeCenterOfGravity };
     })();
 
-
-    // CAMERA
-    Game.camera = (function () {
-        let loc = new Game.Vector(0, 0);
-        let zoom = 1;
-
-        const screenLocToCanvasLoc = (loc) => {
-            let canvasLoc = loc;
-            canvasLoc = loc.div(Game.camera.zoom)
-            canvasLoc = canvasLoc.add(Game.camera.loc);
-            return canvasLoc;
-        }
-
-        const zoomIn = (loc) => {
-            if (Game.camera.zoom > 10) return;
-            zoomInternal(loc, false);
-        };
-
-        const zoomOut = (loc) => {
-            if (Game.camera.zoom < 0.1) return;
-            zoomInternal(loc, true);
-        };
-
-        const zoomInternal = (loc, reverse) => {
-            const ZOOM_RATE = 1.2;
-            const oldZoom = Game.camera.zoom;
-            let newZoom = reverse ? oldZoom / ZOOM_RATE : oldZoom * ZOOM_RATE;
-            const oldLoc = Game.camera.loc;
-            const locDiff = loc.div(oldZoom).sub(loc.div(newZoom));
-            const newLoc = oldLoc.add(locDiff);
-            Game.camera.loc = newLoc;
-            Game.camera.zoom = newZoom;
-        };
-
-        const moveCamera = () => {
-            if (Game.controls.lockToCenter) {
-                moveCameraWithCenterOfGravity();
-            } else {
-                moveCameraWithArrows();
-            }
-        }
-
-        const moveCameraWithCenterOfGravity = () => {
-            const cog = Game.physics.computeCenterOfGravity();
-            const screenCenter = new Game.Vector(Game.canvas.width / 2, Game.canvas.height / 2).div(Game.camera.zoom);
-            const newCamLoc = cog.sub(screenCenter);
-            const diff = newCamLoc.sub(Game.camera.loc).div(10);
-            Game.camera.loc = Game.camera.loc.add(diff);
-        }
-
-        const moveCameraWithArrows = () => {
-            const speed = 400;
-            const step = (1000 / 60) / 1000;
-            if (Game.controls.left) Game.camera.loc.x -= speed * step;
-            if (Game.controls.up) Game.camera.loc.y -= speed * step;
-            if (Game.controls.right) Game.camera.loc.x += speed * step;
-            if (Game.controls.down) Game.camera.loc.y += speed * step;
-        }
-
-        const isParticleInView = (p) => {
-            const canvas = Game.canvas;
-            const zoom = Game.camera.zoom;
-            const loc = Game.camera.loc;
-
-            const viewLeft = loc.x;
-            const viewRight = loc.x + canvas.width / zoom;
-            const viewTop = loc.y;
-            const viewBottom = loc.y + canvas.height / zoom;
-
-            const particleLeft = p.location.x - p.radius;
-            const particleRight = p.location.x + p.radius;
-            const particleTop = p.location.y - p.radius;
-            const particleBottom = p.location.y + p.radius;
-
-            return particleRight >= viewLeft && particleLeft <= viewRight &&
-                   particleBottom >= viewTop && particleTop <= viewBottom;
-        }
-
-        return {
-            loc,
-            zoom,
-            zoomIn,
-            zoomOut,
-            screenLocToCanvasLoc,
-            moveCamera,
-            isParticleInView
-        };
-    })();
-
-
-    // RENDERING
-    Game.rendering = (function () {
-        let fps, fpsLast, fpslastUpdated;
-
-        const renderGrid = (ctx) => {
-            const gridSize = 100;
-            const gridHeight = Game.canvas.height / Game.camera.zoom;
-            const gridWidth = Game.canvas.width / Game.camera.zoom;
-            ctx.beginPath();
-            const cameraXPan = Game.camera.loc.x % gridSize;
-            const cameraYPan = Game.camera.loc.y % gridSize;
-            for (let i = -cameraXPan; i <= gridWidth; i += gridSize) {
-                ctx.moveTo(i, 0);
-                ctx.lineTo(i, gridHeight);
-            }
-            for (let i = -cameraYPan; i <= gridHeight; i += gridSize) {
-                ctx.moveTo(0, i);
-                ctx.lineTo(gridWidth, i);
-            }
-            ctx.lineWidth = 0.1;
-            ctx.strokeStyle = "#555";
-            ctx.stroke();
-        }
-
-        const renderParticleTrails = (ctx, p) => {
-            const TRAILS_IN_PATH = 5;
-            for (let i = p.trails.length - 1; i >= 0; i -= TRAILS_IN_PATH) {
-                if (!p.trails[i]) continue;
-                ctx.beginPath();
-                ctx.moveTo(p.trails[i].x, p.trails[i].y);
-                for (let j = i - 1; j >= Math.max(i - TRAILS_IN_PATH, 0); j--) {
-                    let trailLoc = p.trails[j];
-                    if (trailLoc) ctx.lineTo(trailLoc.x, trailLoc.y);
-                }
-                const opacity = i / p.trails.length / 5;
-                ctx.lineWidth = 3;
-                ctx.strokeStyle = p.color;
-                ctx.globalAlpha = opacity;
-                ctx.stroke();
-            }
-            ctx.globalAlpha = 1;
-        }
-
-        const renderParticle = (ctx, p) => {
-            ctx.beginPath();
-            ctx.arc(p.location.x, p.location.y, p.radius, 0, Math.PI * 2, false);
-            ctx.fillStyle = p.color;
-            ctx.fill();
-        }
-
-        const renderParticles = (ctx) => {
-            for (let i = 0; i < Game.particles.length; i++) {
-                const p = Game.particles[i];
-                if (Game.camera.isParticleInView(p)) {
-                    renderParticleTrails(ctx, p);
-                }
-            }
-            for (let i = 0; i < Game.particles.length; i++) {
-                const p = Game.particles[i];
-                if (Game.camera.isParticleInView(p)) {
-                    renderParticle(ctx, p);
-                }
-            }
-        }
-
-        const renderParticleVectors = (ctx) => {
-            for (let i = 0; i < Game.particles.length; i++) {
-                const p = Game.particles[i];
-                ctx.setLineDash([3, 7]);
-                ctx.lineWidth = 0.3;
-                ctx.beginPath();
-                ctx.moveTo(p.location.x, p.location.y);
-                ctx.lineTo(p.location.x + p.a.x * 200, p.location.y + p.a.y * 200);
-                ctx.strokeStyle = 'rgba(255, 0, 0, 0.5)';
-                ctx.stroke();
-                ctx.beginPath();
-                ctx.moveTo(p.location.x, p.location.y);
-                ctx.lineTo(p.location.x + p.v.x * 5, p.location.y + p.v.y * 5);
-                ctx.strokeStyle = 'rgba(0, 255, 0, 0.5)';
-                ctx.stroke();
-                ctx.setLineDash([]);
-            }
-        }
-
-        const renderDebugInfo = (ctx) => {
-            renderParticleVectors(ctx)
-            if (!fpslastUpdated || window.performance.now() - fpslastUpdated >= 1000) {
-                fpsLast = fps;
-                fpslastUpdated = window.performance.now();
-                fps = 0;
-            }
-            fps++;
-            if (fpsLast) {
-                ctx.save();
-                ctx.setTransform(1, 0, 0, 1, 0, 0);
-                ctx.font = "14px monospace";
-                ctx.fillStyle = "#555";
-                ctx.fillText(fpsLast + ' fps', 5, 15);
-                ctx.fillText(Game.engine.timeMultiplier + 'x speed', 5, 30);
-                ctx.restore();
-            }
-        }
-
-        const render = () => {
-            const ctx = Game.canvas.getContext("2d");
-            ctx.setTransform(1, 0, 0, 1, 0, 0);
-            ctx.clearRect(0, 0, Game.canvas.width, Game.canvas.height);
-            ctx.scale(Game.camera.zoom, Game.camera.zoom);
-            renderGrid(ctx);
-            ctx.translate(-Game.camera.loc.x, -Game.camera.loc.y);
-            renderParticles(ctx);
-            renderDebugInfo(ctx);
-        }
-
-        return { render };
-    })();
-
-    // KEYBOARD CONTROLS
-    Game.controls = {
-        left: false, up: false, right: false, down: false,
-        pause: false, lockToCenter: false, reset: false
-    };
-
-    window.addEventListener("keydown", (e) => {
-        switch (e.keyCode) {
-            case 37: case 65: Game.controls.left = true; Game.controls.lockToCenter = false; break;
-            case 38: case 87: Game.controls.up = true; Game.controls.lockToCenter = false; break;
-            case 39: case 68: Game.controls.right = true; Game.controls.lockToCenter = false; break;
-            case 40: case 83: Game.controls.down = true; Game.controls.lockToCenter = false; break;
-            case 219: Game.engine.timeMultiplier /= 2; break; // [
-            case 221: Game.engine.timeMultiplier *= 2; break; // ]
-        }
-    }, false);
+    // ── Controls ─────────────────────────────────────────────────────────────
+    Game.controls = { pause: false, lockToCenter: false, reset: false };
 
     window.addEventListener("keyup", (e) => {
         switch (e.keyCode) {
-            case 37: case 65: Game.controls.left = false; break;
-            case 38: case 87: Game.controls.up = false; break;
-            case 39: case 68: Game.controls.right = false; break;
-            case 40: case 83: Game.controls.down = false; break;
-            case 80: Game.controls.pause = !Game.controls.pause; break;
-            case 76: Game.controls.lockToCenter = !Game.controls.lockToCenter; break;
-            case 82: Game.controls.reset = true; break;
+            case 80:  Game.controls.pause = !Game.controls.pause; break;         // P
+            case 76:  Game.controls.lockToCenter = !Game.controls.lockToCenter; break; // L
+            case 82:  Game.controls.reset = true; break;                         // R
+            case 219: Game.engine.timeMultiplier /= 2; break;                    // [
+            case 221: Game.engine.timeMultiplier *= 2; break;                    // ]
         }
-    }, false);
+    });
 
+    // Click on the XZ plane to spawn a body
+    const raycaster  = new THREE.Raycaster();
+    const spawnPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+    let mouseDownTime = 0, mouseDownPos = { x: 0, y: 0 };
 
-    // MOUSE INTERACTION
-    let mouseDownLoc, mouseDownTime;
+    renderer.domElement.addEventListener("mousedown", (e) => {
+        mouseDownTime = performance.now();
+        mouseDownPos  = { x: e.clientX, y: e.clientY };
+    });
 
-    const touchOrMouseDown = (x, y) => {
-        mouseDownLoc = new Game.Vector(x - Game.canvas.getBoundingClientRect().left, y - Game.canvas.getBoundingClientRect().top);
-        mouseDownTime = window.performance.now();
-    }
+    renderer.domElement.addEventListener("mouseup", (e) => {
+        const dx = e.clientX - mouseDownPos.x;
+        const dy = e.clientY - mouseDownPos.y;
+        if (Math.sqrt(dx * dx + dy * dy) > 5) return; // orbit drag, not click
 
-    const touchOrMouseUp = (x, y) => {
-        const mouseUpLoc = new Game.Vector(x - Game.canvas.getBoundingClientRect().left, y - Game.canvas.getBoundingClientRect().top);
-        const mouseUpLocTranslated = Game.camera.screenLocToCanvasLoc(mouseUpLoc);
-        const hitParticle = Game.physics.hitTest(mouseUpLocTranslated);
+        const ndc = new THREE.Vector2(
+            (e.clientX / window.innerWidth)  *  2 - 1,
+            (e.clientY / window.innerHeight) * -2 + 1
+        );
+        raycaster.setFromCamera(ndc, threeCamera);
+        const hit = new THREE.Vector3();
+        if (!raycaster.ray.intersectPlane(spawnPlane, hit)) return;
 
-        if (hitParticle) {
-            hitParticle.selected = true;
-            return;
+        const duration = performance.now() - mouseDownTime;
+        const radius   = Math.max(1, duration / 50 + 2);
+        Game.particles.push(new Circle(new Vector(hit.x, 0, hit.z), new Vector(), radius));
+    });
+
+    window.addEventListener("resize", () => {
+        threeCamera.aspect = window.innerWidth / window.innerHeight;
+        threeCamera.updateProjectionMatrix();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+
+    // ── HUD ──────────────────────────────────────────────────────────────────
+    const hud = document.createElement("div");
+    hud.style.cssText = "position:fixed;top:5px;left:5px;color:#667;font:13px monospace;pointer-events:none;";
+    document.body.appendChild(hud);
+
+    let fpsCount = 0, fpsDisplay = 0, fpsLastTime = performance.now();
+    const updateHUD = () => {
+        fpsCount++;
+        const now = performance.now();
+        if (now - fpsLastTime >= 1000) {
+            fpsDisplay  = fpsCount;
+            fpsCount    = 0;
+            fpsLastTime = now;
         }
+        hud.textContent = `${fpsDisplay} fps | ${Game.engine.timeMultiplier}x | ${Game.particles.length} bodies`;
+    };
 
-        const speedVector = mouseUpLoc.sub(mouseDownLoc).div(10);
-        const mouseDownDuration = window.performance.now() - mouseDownTime;
-        const newCircleRadius = mouseDownDuration / 50 + 3;
-        const newCircle = new Game.Circle(mouseUpLocTranslated, speedVector, newCircleRadius);
-        Game.particles.push(newCircle);
-    }
-
-    const mouseWheel = (event) => {
-        const mouseLoc = new Game.Vector(event.x - Game.canvas.getBoundingClientRect().left, event.y - Game.canvas.getBoundingClientRect().top);
-        const wheel = event.wheelDelta / 120;
-        if (wheel > 0) Game.camera.zoomIn(mouseLoc);
-        else Game.camera.zoomOut(mouseLoc);
-    }
-
-    Game.canvas.addEventListener("mousedown", (e) => touchOrMouseDown(e.pageX, e.pageY));
-    Game.canvas.addEventListener("touchstart", (e) => touchOrMouseDown(e.changedTouches[0].x, e.changedTouches[0].y), false);
-    Game.canvas.addEventListener("mouseup", (e) => touchOrMouseUp(e.pageX, e.pageY));
-    Game.canvas.addEventListener("touchend", (e) => touchOrMouseUp(e.changedTouches[0].x, e.changedTouches[0].y), false);
-    Game.canvas.addEventListener('mousewheel', (event) => {
-        mouseWheel(event);
-        return false;
-    }, false);
-
-
-    // GAME ENGINE
+    // ── Game engine ──────────────────────────────────────────────────────────
     Game.engine = (function () {
+        const engine = { play, timeMultiplier: 1 };
 
-        const engine = {
-            play,
-            timeMultiplier: 1
+        const addTrail = (p) => {
+            p.trails.push(new Vector(p.location.x, p.location.y, p.location.z));
+            if (p.trails.length > MAX_TRAILS) p.trails.shift();
         };
 
-        const addParticleTrails = (p) => {
-            const MAX_TRAILS_LENGTH = 200;
-            p.trails.push(p.location);
-            if (p.trails.length > MAX_TRAILS_LENGTH) p.trails.shift();
-        }
-
-        const init = () => {
-            adjustCanvasSize();
-            addInitialParticles();
-        }
-
+        // Orbital speed formula: v = sqrt(G * M_sun / r), G=0.1, M_sun≈17157
+        // r=250 → v≈2.62  r=180 → v≈3.09  r=160 → v≈3.27
         const addInitialParticles = () => {
-            const sun = new Game.Circle(new Game.Vector(0, 0), new Game.Vector(-0.0, -0.05), 16);
-            sun.color = "#EE5";
-            const earth = new Game.Circle(new Game.Vector(250, 0), new Game.Vector(0, 2.6), 4);
-            earth.color = "#66F";
-            const moon = new Game.Circle(new Game.Vector(267, 0), new Game.Vector(0, 3.6), 1);
-            moon.color = "#111";
-            Game.particles.push(sun, earth, moon);
-            Game.camera.loc = new Game.Vector(-Game.canvas.width / 2, -Game.canvas.height / 2);
-        }
+            // Sun – glowing yellow, emits light
+            const sun = new Circle(new Vector(0, 0, 0), new Vector(0, 0, 0), 16);
+            sun.mesh.material.color.setHex(0xffdd44);
+            sun.mesh.material.emissive.setHex(0xffdd44);
+            sun.mesh.material.emissiveIntensity = 2.0;
+
+            // Earth – orbits in the XZ plane (the reference grid plane)
+            const earth = new Circle(new Vector(250, 0, 0), new Vector(0, 0, 2.62), 4);
+            earth.mesh.material.color.setHex(0x4477ff);
+            earth.mesh.material.emissive.setHex(0x223388);
+
+            // Moon – close to Earth, same orbital plane
+            const moon = new Circle(new Vector(267, 0, 0), new Vector(0, 0, 3.6), 1);
+            moon.mesh.material.color.setHex(0x888888);
+            moon.mesh.material.emissive.setHex(0x444444);
+
+            // Venus – orbits in XZ plane but opposite side
+            const venus = new Circle(new Vector(-180, 0, 0), new Vector(0, 0, -3.09), 3);
+            venus.mesh.material.color.setHex(0xff8844);
+            venus.mesh.material.emissive.setHex(0x993300);
+
+            // Mars – starts above the grid, orbits in the XY plane (tilted 90° from others)
+            const mars = new Circle(new Vector(0, 160, 0), new Vector(3.27, 0, 0), 2.5);
+            mars.mesh.material.color.setHex(0xff3322);
+            mars.mesh.material.emissive.setHex(0x881100);
+
+            Game.particles.push(sun, earth, moon, venus, mars);
+        };
 
         const reset = () => {
+            for (const p of Game.particles) p.remove();
             Game.particles = [];
             Game.controls.reset = false;
-        }
+            addInitialParticles();
+        };
 
         const updatePhysics = () => {
-            if (!Game.controls.pause) {
-                const physicsPerFrame = 8;
-                if (engine.timeMultiplier < 1 / 32) engine.timeMultiplier = 1 / 32;
-                if (engine.timeMultiplier > 32) engine.timeMultiplier = 32;
-                for (let k = 0; k < physicsPerFrame * engine.timeMultiplier; k++) {
-                    Game.physics.doPhysics(1.0 / physicsPerFrame);
-                    for (let i = 0; i < Game.particles.length; i++) {
-                        addParticleTrails(Game.particles[i]);
-                    }
-                }
+            if (Game.controls.pause) return;
+            if (engine.timeMultiplier < 1 / 32) engine.timeMultiplier = 1 / 32;
+            if (engine.timeMultiplier > 32)      engine.timeMultiplier = 32;
+            const physicsPerFrame = 8;
+            for (let k = 0; k < physicsPerFrame * engine.timeMultiplier; k++) {
+                Game.physics.doPhysics(1.0 / physicsPerFrame);
+                for (const p of Game.particles) addTrail(p);
             }
-        }
+        };
 
         const updateGraphics = () => {
             if (Game.controls.reset) reset();
-            Game.camera.moveCamera();
-            Game.rendering.render();
-            window.requestAnimationFrame(updateGraphics);
-        }
 
-        const adjustCanvasSize = () => {
-            const adjustInternal = () => {
-                Game.canvas.width = window.innerWidth;
-                Game.canvas.height = window.innerHeight;
-            };
-            adjustInternal();
-            window.onresize = adjustInternal;
+            if (Game.controls.lockToCenter && Game.particles.length > 0) {
+                const cog = Game.physics.computeCenterOfGravity();
+                orbitControls.target.set(cog.x, cog.y, cog.z);
+            }
+
+            for (const p of Game.particles) {
+                p.syncMesh();
+                p.syncTrail();
+            }
+
+            // Point light tracks the sun
+            if (Game.particles.length > 0) {
+                const s = Game.particles[0].location;
+                sunLight.position.set(s.x, s.y, s.z);
+            }
+
+            updateHUD();
+            orbitControls.update();
+            renderer.render(scene, threeCamera);
+            requestAnimationFrame(updateGraphics);
         };
 
         function play() {
-            init();
-            const physicsInterval = 1000 / 60;
-            window.setInterval(updatePhysics, physicsInterval);
+            addInitialParticles();
+            setInterval(updatePhysics, 1000 / 60);
             updateGraphics();
         }
 
         return engine;
     })();
 
-
-    window.onload = () => {
-        Game.engine.play();
-    }
-
+    window.onload = () => Game.engine.play();
 
 })(window);
