@@ -1,22 +1,24 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html>
 <head>
     <meta charset="utf-8" />
-    <title>NBODY</title>
+    <title>NBODY 3D</title>
     <link rel="stylesheet" href="index.css" />
 </head>
 <body>
-    <canvas id="canvas" ></canvas>
-    
+    <canvas id="canvas"></canvas>
+
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
     <script src="NBODY.js"></script>
 
     <div id="instructions">
         Click to create<br/>
-        Drag to throw<br />
-        Arrow keys or WASD<br />
-        P to pause<br />
-        L to follow center<br />
-        R to reset<br />
+        Drag to orbit<br/>
+        Scroll to zoom<br/>
+        P to pause<br/>
+        L to follow center<br/>
+        R to reset<br/>
         [ and ] to change speed
     </div>
 </body>
